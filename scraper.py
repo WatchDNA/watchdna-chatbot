@@ -1,6 +1,5 @@
 """
 scraper.py — Scrapes WatchDNA.com and builds the knowledge base.
-Uses Shopify product JSON API with proper pagination for ALL products.
 """
 
 import requests
@@ -11,7 +10,8 @@ import os
 from datetime import datetime, timezone
 
 BASE_URL = os.environ.get("SHOPIFY_URL", "https://watchdna.com")
-MAX_PAGES = 80
+MAX_SITE_PAGES = 80
+MAX_PRODUCT_PAGES = 10  # Safety cap: 10 pages x 250 = 2500 products max
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
 
 COLLECTION_HANDLES = [
@@ -64,16 +64,15 @@ def format_product(p, base_url):
 
 
 def fetch_collection(base_url, handle, seen_handles):
-    """Fetch all pages of a collection using since_id pagination."""
     products = []
-    since_id = 0
+    page = 1
 
-    while True:
+    while page <= MAX_PRODUCT_PAGES:
         try:
             if handle == "all_products":
-                url = f"{base_url}/products.json?limit=250&since_id={since_id}"
+                url = f"{base_url}/products.json?limit=250&page={page}"
             else:
-                url = f"{base_url}/collections/{handle}/products.json?limit=250&since_id={since_id}"
+                url = f"{base_url}/collections/{handle}/products.json?limit=250&page={page}"
 
             resp = requests.get(url, headers=HEADERS, timeout=15)
             if resp.status_code != 200:
@@ -91,15 +90,16 @@ def fetch_collection(base_url, handle, seen_handles):
                     products.append(format_product(p, base_url))
                     new += 1
 
-            since_id = batch[-1]["id"]
-            if new:
-                print(f"  ✓ {handle}: +{new} new (total unique: {len(seen_handles)})")
+            print(f"  ✓ {handle} page {page}: {len(batch)} items, {new} new")
 
+            # Stop if we got less than 250 — means no more pages
             if len(batch) < 250:
                 break
 
+            page += 1
+
         except Exception as e:
-            print(f"  ✗ {handle} error: {e}")
+            print(f"  ✗ {handle} page {page} error: {e}")
             break
 
     return products
@@ -109,19 +109,19 @@ def scrape_products(base_url):
     seen_handles = set()
     all_products = []
 
-    print("\n📦 Fetching ALL products...")
+    print("\n📦 Fetching products...")
 
-    # First hit the global endpoint
+    # Global endpoint first
     found = fetch_collection(base_url, "all_products", seen_handles)
     all_products.extend(found)
-    print(f"  Global endpoint: {len(found)} products")
+    print(f"  Global: {len(found)} products")
 
-    # Then hit every brand collection to catch anything missed
+    # Per-brand collections
     for handle in COLLECTION_HANDLES:
         found = fetch_collection(base_url, handle, seen_handles)
         all_products.extend(found)
 
-    print(f"\n  ✅ Total unique products scraped: {len(all_products)}")
+    print(f"\n  ✅ Total unique products: {len(all_products)}")
     return all_products
 
 
@@ -132,7 +132,7 @@ def scrape_site(base_url):
     pages = []
 
     print("\n🌐 Scraping site pages...")
-    while to_visit and len(visited) < MAX_PAGES:
+    while to_visit and len(visited) < MAX_SITE_PAGES:
         url = to_visit.pop(0).split("#")[0].split("?")[0].rstrip("/") or base_url
         if url in visited:
             continue
@@ -162,7 +162,7 @@ def main():
     products = scrape_products(BASE_URL)
     pages = scrape_site(BASE_URL)
     all_entries = products + pages
-    print(f"\n✅ {len(products)} products + {len(pages)} pages = {len(all_entries)} total entries")
+    print(f"\n✅ {len(products)} products + {len(pages)} pages = {len(all_entries)} total")
 
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
         json.dump({
@@ -178,7 +178,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
