@@ -1,6 +1,6 @@
 """
 scraper.py — Scrapes WatchDNA.com and builds the knowledge base.
-Hits multiple Shopify collection endpoints to get ALL products.
+Uses Shopify product JSON API with proper pagination for ALL products.
 """
 
 import requests
@@ -14,12 +14,13 @@ BASE_URL = os.environ.get("SHOPIFY_URL", "https://watchdna.com")
 MAX_PAGES = 80
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
 
-# All known collection handles to scrape products from
 COLLECTION_HANDLES = [
-    "watches",
-    "accessories",
-    "all",
-    "frontpage",
+    "watches", "accessories", "all",
+    "arilus", "boss", "calvin-klein", "coach", "ebel", "elka",
+    "exaequo", "lacoste", "luminox", "micromilspec", "mido",
+    "movado", "naga-time-co", "normalzeit", "norqain", "raymond-weil",
+    "reservoir", "solar-aqua", "sovrygn", "stil-timepieces",
+    "tesse-watches", "u-boat", "withings", "worden",
 ]
 
 PRIORITY_PATHS = [
@@ -57,72 +58,70 @@ def format_product(p, base_url):
         f"Price: ${price} CAD\n"
         f"URL: {product_url}\n"
         f"Tags: {tags}\n"
-        f"Description: {body[:500]}"
+        f"Description: {body[:300]}"
     )
     return {"url": product_url, "title": title, "content": content, "handle": handle}
 
 
-def scrape_products(base_url):
-    """Fetch all products from every known collection + global endpoint."""
-    seen_handles = set()
-    all_products = []
+def fetch_collection(base_url, handle, seen_handles):
+    """Fetch all pages of a collection using since_id pagination."""
+    products = []
+    since_id = 0
 
-    # 1. Global products endpoint (all published products)
-    print("\n📦 Fetching from /products.json...")
-    page = 1
     while True:
         try:
-            url = f"{base_url}/products.json?limit=250&page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=12)
+            if handle == "all_products":
+                url = f"{base_url}/products.json?limit=250&since_id={since_id}"
+            else:
+                url = f"{base_url}/collections/{handle}/products.json?limit=250&since_id={since_id}"
+
+            resp = requests.get(url, headers=HEADERS, timeout=15)
             if resp.status_code != 200:
-                print(f"  ✗ Status {resp.status_code}")
                 break
+
             batch = resp.json().get("products", [])
             if not batch:
                 break
+
+            new = 0
             for p in batch:
                 h = p.get("handle")
                 if h and h not in seen_handles:
                     seen_handles.add(h)
-                    all_products.append(format_product(p, base_url))
-            print(f"  ✓ Page {page}: {len(batch)} products")
+                    products.append(format_product(p, base_url))
+                    new += 1
+
+            since_id = batch[-1]["id"]
+            if new:
+                print(f"  ✓ {handle}: +{new} new (total unique: {len(seen_handles)})")
+
             if len(batch) < 250:
                 break
-            page += 1
+
         except Exception as e:
-            print(f"  ✗ Error: {e}")
+            print(f"  ✗ {handle} error: {e}")
             break
 
-    # 2. Per-collection endpoints to catch anything missed
-    for handle in COLLECTION_HANDLES:
-        print(f"\n📦 Fetching from /collections/{handle}/products.json...")
-        page = 1
-        while True:
-            try:
-                url = f"{base_url}/collections/{handle}/products.json?limit=250&page={page}"
-                resp = requests.get(url, headers=HEADERS, timeout=12)
-                if resp.status_code != 200:
-                    break
-                batch = resp.json().get("products", [])
-                if not batch:
-                    break
-                new = 0
-                for p in batch:
-                    h = p.get("handle")
-                    if h and h not in seen_handles:
-                        seen_handles.add(h)
-                        all_products.append(format_product(p, base_url))
-                        new += 1
-                if new:
-                    print(f"  ✓ Page {page}: {new} new products")
-                if len(batch) < 250:
-                    break
-                page += 1
-            except Exception as e:
-                print(f"  ✗ Error: {e}")
-                break
+    return products
 
-    print(f"\n  ✅ Total unique products: {len(all_products)}")
+
+def scrape_products(base_url):
+    seen_handles = set()
+    all_products = []
+
+    print("\n📦 Fetching ALL products...")
+
+    # First hit the global endpoint
+    found = fetch_collection(base_url, "all_products", seen_handles)
+    all_products.extend(found)
+    print(f"  Global endpoint: {len(found)} products")
+
+    # Then hit every brand collection to catch anything missed
+    for handle in COLLECTION_HANDLES:
+        found = fetch_collection(base_url, handle, seen_handles)
+        all_products.extend(found)
+
+    print(f"\n  ✅ Total unique products scraped: {len(all_products)}")
     return all_products
 
 
@@ -163,7 +162,7 @@ def main():
     products = scrape_products(BASE_URL)
     pages = scrape_site(BASE_URL)
     all_entries = products + pages
-    print(f"\n✅ {len(products)} products + {len(pages)} pages = {len(all_entries)} total")
+    print(f"\n✅ {len(products)} products + {len(pages)} pages = {len(all_entries)} total entries")
 
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
         json.dump({
@@ -179,3 +178,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
