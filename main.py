@@ -52,17 +52,38 @@ YOUR KNOWLEDGE:
   - Community: /pages/redbar, /pages/watch-aficionados, /blogs/watch_enthusiast
   - Authorized Dealers: /tools/storelocator/directory
 - When users ask to browse or see watches, always link them to /collections/watches
-
 WATCHDNA WEBSITE CONTENT:
 {knowledge}
 """
 
 
+GITHUB_KB_URL = "https://raw.githubusercontent.com/emmad24k/watchdna-chatbot/main/knowledge_base.json"
+
 def load_knowledge() -> str:
-    if not Path(KNOWLEDGE_FILE).exists():
-        return "Knowledge base not yet available. Responding from general knowledge only."
-    with open(KNOWLEDGE_FILE) as f:
-        data = json.load(f)
+    # Try local file first
+    if Path(KNOWLEDGE_FILE).exists():
+        try:
+            with open(KNOWLEDGE_FILE) as f:
+                data = json.load(f)
+            print("Loaded knowledge base from local file")
+        except Exception as e:
+            print(f"Local file error: {e}")
+            data = None
+    else:
+        data = None
+
+    # Fall back to GitHub if local not available
+    if not data:
+        try:
+            import urllib.request
+            print("Fetching knowledge base from GitHub...")
+            with urllib.request.urlopen(GITHUB_KB_URL, timeout=15) as r:
+                data = json.loads(r.read().decode())
+            print(f"Loaded {data.get('product_count', 0)} products from GitHub")
+        except Exception as e:
+            print(f"GitHub fetch error: {e}")
+            return "Knowledge base not available."
+
     context = ""
     for page in data.get("pages", []):
         context += f"\n\n--- PAGE: {page['url']} ---\n{page['content']}"
@@ -102,7 +123,6 @@ async def health():
             data = json.load(f)
         last_scraped = data.get("scraped_at")
     return {"status": "ok", "knowledge_base_exists": kb_exists, "last_scraped": last_scraped}
-
 
 
 
