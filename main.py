@@ -53,41 +53,78 @@ YOUR KNOWLEDGE:
   - Authorized Dealers: /tools/storelocator/directory
 - When users ask to browse or see watches, always link them to /collections/watches
 WATCHDNA WEBSITE CONTENT:
+
 {knowledge}
 """
 
 
 GITHUB_KB_URL = "https://raw.githubusercontent.com/emmad24k/watchdna-chatbot/main/knowledge_base.json"
 
-def load_knowledge() -> str:
+# Cache the knowledge base in memory so we don't fetch it on every request
+_kb_cache = None
+
+def get_knowledge_base():
+    global _kb_cache
+    if _kb_cache:
+        return _kb_cache
+
     # Try local file first
     if Path(KNOWLEDGE_FILE).exists():
         try:
             with open(KNOWLEDGE_FILE) as f:
-                data = json.load(f)
-            print("Loaded knowledge base from local file")
+                _kb_cache = json.load(f)
+            print(f"Loaded {_kb_cache.get('product_count', 0)} products from local file")
+            return _kb_cache
         except Exception as e:
             print(f"Local file error: {e}")
-            data = None
-    else:
-        data = None
 
-    # Fall back to GitHub if local not available
+    # Fall back to GitHub
+    try:
+        import urllib.request
+        print("Fetching knowledge base from GitHub...")
+        with urllib.request.urlopen(GITHUB_KB_URL, timeout=20) as r:
+            _kb_cache = json.loads(r.read().decode())
+        print(f"Loaded {_kb_cache.get('product_count', 0)} products from GitHub")
+        return _kb_cache
+    except Exception as e:
+        print(f"GitHub fetch error: {e}")
+        return None
+
+
+def load_knowledge(query: str = "") -> str:
+    data = get_knowledge_base()
     if not data:
-        try:
-            import urllib.request
-            print("Fetching knowledge base from GitHub...")
-            with urllib.request.urlopen(GITHUB_KB_URL, timeout=15) as r:
-                data = json.loads(r.read().decode())
-            print(f"Loaded {data.get('product_count', 0)} products from GitHub")
-        except Exception as e:
-            print(f"GitHub fetch error: {e}")
-            return "Knowledge base not available."
+        return "Knowledge base not available."
+
+    pages = data.get("pages", [])
+    query_lower = query.lower()
+
+    # Extract keywords from query for smart matching
+    keywords = [w for w in query_lower.split() if len(w) > 2]
+
+    # Score each page by relevance to the query
+    def score(page):
+        text = (page.get("title", "") + " " + page.get("content", "")).lower()
+        return sum(1 for kw in keywords if kw in text)
+
+    if keywords:
+        # Sort by relevance: most relevant pages first
+        scored = sorted(pages, key=score, reverse=True)
+        # Take top 15 most relevant + first 20 general pages
+        relevant = scored[:15]
+        general = [p for p in pages if p not in relevant][:20]
+        ordered = relevant + general
+    else:
+        ordered = pages
 
     context = ""
-    for page in data.get("pages", []):
-        context += f"\n\n--- PAGE: {page['url']} ---\n{page['content']}"
-    return context[:14000]
+    for page in ordered:
+        entry = f"\n\n--- {page['url']} ---\n{page['content']}"
+        if len(context) + len(entry) > 16000:
+            break
+        context += entry
+
+    return context
 
 
 class ChatRequest(BaseModel):
@@ -97,7 +134,7 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    knowledge = load_knowledge()
+    knowledge = load_knowledge(req.message)
     system = SYSTEM_PROMPT.format(knowledge=knowledge)
 
     messages = [{"role": "system", "content": system}]
