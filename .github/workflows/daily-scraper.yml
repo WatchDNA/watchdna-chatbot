@@ -25,5 +25,18 @@ jobs:
           SHOPIFY_URL: https://watchdna.com
         run: python scraper.py
 
-      - name: Trigger Railway redeploy
-        run: curl -X POST "${{ secrets.RAILWAY_DEPLOY_HOOK }}"
+      - name: Commit knowledge base to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add knowledge_base.json
+          git diff --staged --quiet || git commit -m "Update knowledge base $(date -u '+%Y-%m-%d')"
+          git push
+
+
+
+
+
+
+
+
