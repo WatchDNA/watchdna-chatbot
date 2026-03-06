@@ -203,10 +203,10 @@ async def chat(req: ChatRequest):
     # Check if user is asking about a specific brand's stores
     brand_match = find_brand_in_query(req.message)
     store_hint = ""
-    if brand_match and any(w in req.message.lower() for w in ["store", "dealer", "buy", "near", "where", "find", "location", "authorized"]):
-        store_hint = f"\n\nNOTE: User is asking about {brand_match['name']} dealers. Direct them to: {brand_match['url']}"
+    if brand_match:
+        store_hint = f"\n\nNOTE: User is asking about {brand_match['name']}. Always include this clickable link in your response: [{brand_match['name']} Dealers]({brand_match['url']})"
         if req.location:
-            store_hint += f" — their location is {req.location}, tell them to use the map filter on that page."
+            store_hint += f" Their location is {req.location}."
 
     system = SYSTEM_PROMPT.format(
         knowledge=knowledge + store_hint,
@@ -242,9 +242,3 @@ async def health():
         "store_brands_csv_exists": csv_exists,
         "last_scraped": last_scraped
     }
-
-
-
-
-
-
