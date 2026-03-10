@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from openai import OpenAI
 import json
 import os
+import re
 import csv
 import urllib.request
 import urllib.parse
@@ -229,7 +230,13 @@ async def chat(req: ChatRequest):
         max_tokens=300,
         temperature=0.7,
     )
-    return {"reply": response.choices[0].message.content}
+    reply = response.choices[0].message.content
+
+    # Strip bad formatting the AI uses instead of proper markdown links
+    reply = re.sub(r'[*_]{2,}([^*_]+)[*_]{2,}', r'\1', reply)
+    reply = re.sub(r'__([^_]+)__', r'\1', reply)
+
+    return {"reply": reply}
 
 
 @app.get("/health")
