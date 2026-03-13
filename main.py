@@ -26,39 +26,45 @@ ACCESSORY_TYPES = {
     "6 piece watch winder", "double watch winder", "quad watch winder",
 }
 
-# Hardcoded contributor data with links
+# Hardcoded contributor data with individual page links
+# URL format: https://watchdna.com/pages/firstname-lastname (slugified)
+# If a contributor does not have their own page, falls back to /pages/contributors
 CONTRIBUTORS = """
-CONTRIBUTORS (source: https://watchdna.com/pages/contributors):
-- Brent Robillard (@Calibre321) — Watch Photography and Reviews. Writer, educator, craftsman and watch enthusiast, author of four novels. https://watchdna.com/pages/contributors
-- Cagdas Onen — Watch Enthusiast & Founder of The Catalyst podcast. https://watchdna.com/pages/contributors
-- Carol Besler — Journalist. Has written for Forbes, The Robb Report, Watch and Culture, Hollywood Reporter, Nuvo, Watch Time. https://watchdna.com/pages/contributors
-- Colin Potts — Horologist & Watch Enthusiast. https://watchdna.com/pages/contributors
-- David Carrington — Founder and CEO of COMPASS Timepieces. https://watchdna.com/pages/contributors
-- Elizabeth Ionson — Sales & Training Professional. https://watchdna.com/pages/contributors
-- George Sully — Watch Enthusiast & Entrepreneur. https://watchdna.com/pages/contributors
-- Gian-Paolo Mazzotta — Tailor, Designer, Stylist & Watch Enthusiast. https://watchdna.com/pages/contributors
-- Grigor Garabedian — Head Watchmaker & Director of Service Operations, Fine Jewellery and Timepieces at Birks Group. https://watchdna.com/pages/contributors
-- Hakim El Kadiri — Founder of ELKA Watch Co. https://watchdna.com/pages/contributors
-- @Ian_Cognito — Watch Enthusiast. https://watchdna.com/pages/contributors
-- Jacky Ho — Watchmaker & Artist. https://watchdna.com/pages/contributors
-- Jeremy Freed — Journalist. https://watchdna.com/pages/contributors
-- Mark Fleminger — Watch Enthusiast & RedBar Toronto Chapter Head. https://watchdna.com/pages/contributors
-- Mikhail Gomes — Strategist - Marketing, PR & Content. https://watchdna.com/pages/contributors
-- Nabil Amdan — Watch Enthusiast. https://watchdna.com/pages/contributors
-- Phillip Plimmer — Professional Product/Industrial Designer specialist in Watch Design. https://watchdna.com/pages/contributors
-- Roberta Naas — Journalist, Author, Founder of ATimelyPerspective.com. https://watchdna.com/pages/contributors
-- Sanket Patel — Watch Enthusiast. https://watchdna.com/pages/contributors
-- Sean Shapiro (@VOICEOVERCOP) — Watch Enthusiast, Public Speaker, Podcaster & Opinion Sharer. https://watchdna.com/pages/contributors
-- Smartwatch Dick — Watch Enthusiast & Podcaster. https://watchdna.com/pages/contributors
-- Spiro Mandylor — Fashion Photographer & Style Expert. https://watchdna.com/pages/contributors
-- Sevan Khidichian (Trillium Watch Service) — Certified Watchmaker. https://watchdna.com/pages/contributors
-- Thomas Brissiaud — Founder of Tessé Watches. https://watchdna.com/pages/contributors
-- Thomas J. Sandrin — Watch Enthusiast & Entrepreneur. https://watchdna.com/pages/contributors
-- Tyler @HorologyObsessed — Watch Enthusiast. https://watchdna.com/pages/contributors
-- Tyler Worden — Industrial Designer & Founder of Worden Watch Studio. https://watchdna.com/pages/contributors
-- Victor @JustWatchesTV — Watch Enthusiast & Brand Distributor. https://watchdna.com/pages/contributors
-- Victoria Townsend — Watch Journalist & Horology Storyteller. https://watchdna.com/pages/contributors
-- WatchGuyGlasgow — Watch Enthusiast. https://watchdna.com/pages/contributors
+CONTRIBUTORS — for each person, use their individual URL listed below as the link.
+Format every contributor as: [Full Name](their-url) — Role/bio
+
+- [Brent Robillard](https://watchdna.com/pages/brent-robillard) (@Calibre321) — Watch Photography and Reviews. Writer, educator, craftsman and watch enthusiast, author of four novels.
+- [Cagdas Onen](https://watchdna.com/pages/cagdas-onen) — Watch Enthusiast & Founder of The Catalyst podcast.
+- [Carol Besler](https://watchdna.com/pages/carol-besler) — Journalist. Has written for Forbes, The Robb Report, Watch and Culture, Hollywood Reporter, Nuvo, Watch Time.
+- [Colin Potts](https://watchdna.com/pages/colin-potts) — Horologist & Watch Enthusiast.
+- [David Carrington](https://watchdna.com/pages/david-carrington) — Founder and CEO of COMPASS Timepieces.
+- [Elizabeth Ionson](https://watchdna.com/pages/elizabeth-ionson) — Sales & Training Professional.
+- [George Sully](https://watchdna.com/pages/george-sully) — Watch Enthusiast & Entrepreneur.
+- [Gian-Paolo Mazzotta](https://watchdna.com/pages/gian-paolo-mazzotta) — Tailor, Designer, Stylist & Watch Enthusiast.
+- [Grigor Garabedian](https://watchdna.com/pages/grigor-garabedian) — Head Watchmaker & Director of Service Operations, Fine Jewellery and Timepieces at Birks Group.
+- [Hakim El Kadiri](https://watchdna.com/pages/hakim-el-kadiri) — Founder of ELKA Watch Co.
+- [Ian Cognito](https://watchdna.com/pages/ian-cognito) (@IAN_COGNITO) — Watch Enthusiast.
+- [Jacky Ho](https://watchdna.com/pages/jacky-ho) — Watchmaker & Artist.
+- [Jeremy Freed](https://watchdna.com/pages/jeremy-freed) — Journalist.
+- [Mark Fleminger](https://watchdna.com/pages/mark-fleminger) — Watch Enthusiast & RedBar Toronto Chapter Head.
+- [Mikhail Gomes](https://watchdna.com/pages/mikhail-gomes) — Strategist - Marketing, PR & Content.
+- [Nabil Amdan](https://watchdna.com/pages/nabil-amdan) — Watch Enthusiast.
+- [Phillip Plimmer](https://watchdna.com/pages/phillip-plimmer) — Professional Product/Industrial Designer specialist in Watch Design.
+- [Roberta Naas](https://watchdna.com/pages/roberta-naas) — Journalist, Author, Founder of ATimelyPerspective.com.
+- [Sanket Patel](https://watchdna.com/pages/sanket-patel) — Watch Enthusiast.
+- [Sean Shapiro](https://watchdna.com/pages/sean-shapiro) (@VOICEOVERCOP) — Watch Enthusiast, Public Speaker, Podcaster & Opinion Sharer.
+- [Smartwatch Dick](https://watchdna.com/pages/smartwatch-dick) — Watch Enthusiast & Podcaster.
+- [Spiro Mandylor](https://watchdna.com/pages/spiro-mandylor) — Fashion Photographer & Style Expert.
+- [Sevan Khidichian](https://watchdna.com/pages/sevan-khidichian) (Trillium Watch Service) — Certified Watchmaker.
+- [Thomas Brissiaud](https://watchdna.com/pages/thomas-brissiaud) — Founder of Tessé Watches.
+- [Thomas J. Sandrin](https://watchdna.com/pages/thomas-j-sandrin) — Watch Enthusiast & Entrepreneur.
+- [Tyler HorologyObsessed](https://watchdna.com/pages/tyler-horologyobsessed) — Watch Enthusiast.
+- [Tyler Worden](https://watchdna.com/pages/tyler-worden) — Industrial Designer & Founder of Worden Watch Studio.
+- [Victor JustWatchesTV](https://watchdna.com/pages/victor-justwatchestv) — Watch Enthusiast & Brand Distributor.
+- [Victoria Townsend](https://watchdna.com/pages/victoria-townsend) — Watch Journalist & Horology Storyteller.
+- [WatchGuyGlasgow](https://watchdna.com/pages/watchguyglasgow) — Watch Enthusiast.
+
+NOTE: If any individual page returns a 404, link to https://watchdna.com/pages/contributors instead.
 """
 
 # Hardcoded tradeshows with correct URLs
