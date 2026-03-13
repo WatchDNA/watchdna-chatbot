@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
-import json, os, re, csv, io, urllib.request, random
+import json, os, re, csv, io, urllib.request
 from pathlib import Path
 
 app = FastAPI()
@@ -113,27 +113,6 @@ def extract_budget(query: str):
     return None
 
 
-# Product types that are accessories — never recommend these as watches
-ACCESSORY_TYPES = {
-    "watch winder", "watch roll", "watch case", "safe", "accessories", "accessory",
-    "strap", "bracelet", "desk organizer", "desk organiser", "watch box",
-    "legion safes", "watch certificate", "8 piece watch winder", "16 piece watch winder",
-    "6 piece watch winder", "double watch winder", "quad watch winder",
-    "coach", "raymond weil",  # mis-typed product types in KB
-}
-
-def _is_accessory(page: dict) -> bool:
-    """Return True if this product is an accessory (not a watch)."""
-    for line in page.get("content", "").split("\n"):
-        if line.startswith("Type:"):
-            t = line.replace("Type:", "").strip().lower()
-            if t in ACCESSORY_TYPES:
-                return True
-            if t == "watches":
-                return False
-    return False
-
-
 def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     data = get_knowledge_base()
     if not data:
@@ -143,77 +122,36 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     budget = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
 
-    watches = []      # /products/ + correct currency + type=Watches + price > 0
-    accessories = []  # /products/ + correct currency + non-watch type
-    articles = []     # /blogs/ pages
-    other_pages = []  # everything else (store pages, etc.)
-
+    filtered = []
     for page in data.get("pages", []):
-        url = page.get("url", "")
-        is_product = "/products/" in url
-        is_article = "/blogs/" in url
-
+        is_product = "/products/" in page.get("url", "")
         if is_product:
-            # STRICT currency match — never mix markets
+            # Exact match on currency field — only show products in the user's market
             if page.get("currency", "") != currency:
                 continue
-            # Skip zero-price (not actually sold in this market)
-            if page.get("price", 0) == 0:
-                continue
-            # Skip over budget
+            # Filter by budget
             if budget and page.get("price", 0) > budget:
                 continue
-            # Separate watches from accessories
-            if _is_accessory(page):
-                accessories.append(page)
-            else:
-                watches.append(page)
+        filtered.append(page)
 
-        elif is_article:
-            articles.append(page)
-        else:
-            other_pages.append(page)
-
-    print(f"[LOAD_KNOWLEDGE] currency={currency} | watches={len(watches)} | accessories={len(accessories)} | articles={len(articles)}")
-
-    # Score by keyword relevance
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
 
-    # Determine query intent
-    query_lower = query.lower()
-    is_accessory_query = any(w in query_lower for w in [
-        "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
-    ])
-    is_article_query = any(w in query_lower for w in [
-        "article", "blog", "press", "news", "latest", "recent", "story", "post", "read"
-    ])
-
-    if is_accessory_query:
-        # Accessory query: show accessories first, then watches
-        pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
-    elif is_article_query:
-        # Article query: show articles, minimal products
-        pool = articles + other_pages + sorted(watches, key=score, reverse=True)[:5]
+    if keywords:
+        scored = sorted(filtered, key=score, reverse=True)
+        relevant = scored[:30]
+        general = [p for p in filtered if p not in relevant][:10]
+        ordered = relevant + general
     else:
-        # Default (watch recommendations): shuffle watches so results vary each request,
-        # but keep keyword-relevant ones at the top if there's a specific query
-        if keywords:
-            # Top keyword matches stay first, rest are shuffled
-            scored_watches = sorted(watches, key=score, reverse=True)
-            top = [w for w in scored_watches if score(w) > 0]
-            rest = [w for w in scored_watches if score(w) == 0]
-            random.shuffle(rest)
-            pool = top + rest + other_pages + articles
-        else:
-            # No specific query — fully shuffle so every recommendation session is different
-            shuffled = watches[:]
-            random.shuffle(shuffled)
-            pool = shuffled + other_pages + articles
+        ordered = filtered
+
+    # Debug: confirm how many products made it through the currency filter
+    product_pages = [p for p in filtered if "/products/" in p.get("url", "")]
+    print(f"[LOAD_KNOWLEDGE] currency={currency} | products after filter={len(product_pages)} | total pages={len(filtered)}")
 
     context = ""
-    for page in pool:
+    for page in ordered:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
         if len(context) + len(entry) > 22000:
             break
@@ -238,17 +176,11 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 - Format: [Product Name](url) — {symbol}X.XX {currency}
 - Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
-=== WATCH RECOMMENDATIONS — STRICT RULES ===
+WATCH RECOMMENDATION FLOW — CRITICAL:
 - If the user asks for watch recommendations and has NOT specified a currency in this conversation, ALWAYS ask first:
   "Which market would you like recommendations in? 🌍 CAD, USD, GBP, CHF, or EUR?"
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
-- NEVER recommend watches from a different currency than what was asked.
-- ONLY recommend products from https://watchdna.com/products/ URLs in the WEBSITE CONTENT.
-- NEVER recommend watches mentioned only in blog articles or press releases — those are editorial content, not store listings.
-- A watch is only available on WatchDNA if it has a /products/ URL in the WEBSITE CONTENT with a price in {currency}.
-- When asked for accessories (watch winders, straps, safes, etc.), only recommend /products/ accessories — never watches.
-- NEVER mix accessory recommendations into a watch recommendation response.
-- Each time you give recommendations, pick DIFFERENT watches from the content — vary your selections across brands, price points, and styles. Never default to the same 5 watches every time.
+- NEVER recommend watches from a different currency than what was asked — the same watch has different entries per market and only the correct one will work.
 
 === BRAND QUESTIONS ===
 - Use BOTH site content AND your general watch knowledge for brand history, founders, country of origin.
