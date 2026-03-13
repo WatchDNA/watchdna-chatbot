@@ -36,14 +36,29 @@ COUNTRY_SLUGS = [
 ]
 
 PRIORITY_PATHS = [
-    "/", "/pages/brands-dna", "/pages/our-vision", "/pages/watchmaking101",
+    "/", "/pages/brands-dna", "/pages/our-vision", "/pages/watchmaking",
     "/pages/watch-aficionados", "/pages/worldwatchday", "/pages/redbar",
     "/collections/watches", "/collections/accessories", "/tools/storelocator/directory",
     "/pages/media-directory", "/pages/contributors", "/pages/groups",
     "/pages/platforms", "/pages/committee", "/pages/dailyroutine",
     "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
+    "/pages/blogs", "/blogs/press", "/blogs/watch_enthusiast",
+    # Tradeshows
     "/pages/watchesandwonders", "/pages/windupwatchfair",
-    "/pages/dubai-watch-week", "/pages/jck", "/blogs/press", "/blogs/watch_enthusiast",
+    "/pages/dubai-watch-week", "/pages/jck",
+    "/pages/canadian-watches-jewelry-show", "/pages/coutureshow",
+    "/pages/ephj-the-international-trade-show-for-high-precision",
+    "/pages/hongkong-fair", "/pages/timepieceshow", "/pages/time-to-watches",
+    "/pages/we-love-watches-2025-participating-brands",
+    # Awards
+    "/pages/timepiece-world-awards", "/pages/the-temporis-international-awards",
+    "/pages/grand-prix-horlogerie-geneve",
+    "/pages/the-42nd-hong-kong-watch-clock-design-competition",
+    # Community
+    "/pages/local-community", "/pages/newsletter", "/pages/faq",
+    # Media
+    "/pages/favourite-rssfeeds", "/pages/community-reads",
+    "/pages/accesories-directory",
 ]
 
 
