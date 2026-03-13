@@ -1,6 +1,6 @@
 """
 scraper.py — Scrapes WatchDNA.com and builds the knowledge base.
-Pulls products, pages, blog articles, and store locator data.
+Pulls products, pages, blog articles, and store directory data.
 """
 
 import requests
@@ -24,8 +24,15 @@ COLLECTION_HANDLES = [
     "tesse-watches", "u-boat", "withings", "worden",
 ]
 
-BLOG_HANDLES = [
-    "press", "watch_enthusiast", "news", "articles", "blog"
+BLOG_HANDLES = ["press", "watch_enthusiast"]
+
+# Country slugs for store directory scraping
+COUNTRY_SLUGS = [
+    "australia", "austria", "belgium", "canada", "denmark", "finland",
+    "france", "germany", "hong-kong-sar", "ireland", "italy", "japan",
+    "luxembourg", "netherlands", "new-zealand", "norway", "singapore",
+    "spain", "sweden", "switzerland", "united-arab-emirates",
+    "united-kingdom", "united-states"
 ]
 
 PRIORITY_PATHS = [
@@ -86,12 +93,12 @@ def fetch_collection(base_url, handle, seen_handles):
                     products.append(format_product(p, base_url))
                     new += 1
             if new:
-                print(f"  ✓ {handle} page {page}: {new} new products")
+                print(f"  ✓ {handle} p{page}: {new} new")
             if len(batch) < 250:
                 break
             page += 1
         except Exception as e:
-            print(f"  ✗ {handle} error: {e}")
+            print(f"  ✗ {handle}: {e}")
             break
     return products
 
@@ -105,33 +112,46 @@ def scrape_products(base_url):
     for handle in COLLECTION_HANDLES:
         found = fetch_collection(base_url, handle, seen_handles)
         all_products.extend(found)
-    print(f"\n  ✅ Total unique products: {len(all_products)}")
+    print(f"  ✅ {len(all_products)} unique products")
     return all_products
 
 
 def scrape_articles(base_url):
-    """Scrape blog articles from WatchDNA."""
+    """Scrape real blog articles with verified URLs."""
     articles = []
-    print("\n📰 Fetching blog articles...")
+    seen_urls = set()
+    print("\n📰 Fetching articles...")
+
     for blog_handle in BLOG_HANDLES:
         page = 1
-        while page <= 5:
+        while page <= 10:
             try:
                 url = f"{base_url}/blogs/{blog_handle}.json?limit=50&page={page}"
                 resp = requests.get(url, headers=HEADERS, timeout=12)
                 if resp.status_code != 200:
                     break
-                data = resp.json()
-                posts = data.get("articles", [])
+                posts = resp.json().get("articles", [])
                 if not posts:
                     break
                 for post in posts:
                     title = post.get("title", "")
                     handle = post.get("handle", "")
-                    body = BeautifulSoup(post.get("body_html", "") or "", "html.parser").get_text()
-                    published = post.get("published_at", "")
+                    if not handle:
+                        continue
                     article_url = f"{base_url}/blogs/{blog_handle}/{handle}"
-                    content = f"Article: {title}\nPublished: {published}\nURL: {article_url}\nContent: {body[:800]}"
+                    if article_url in seen_urls:
+                        continue
+                    seen_urls.add(article_url)
+                    body = BeautifulSoup(post.get("body_html", "") or "", "html.parser").get_text()
+                    published = post.get("published_at", "")[:10]  # just date
+                    author = post.get("author", "")
+                    content = (
+                        f"Article: {title}\n"
+                        f"Published: {published}\n"
+                        f"Author: {author}\n"
+                        f"URL: {article_url}\n"
+                        f"Content: {body[:600]}"
+                    )
                     articles.append({"url": article_url, "title": title, "content": content})
                 print(f"  ✓ {blog_handle} page {page}: {len(posts)} articles")
                 if len(posts) < 50:
@@ -140,48 +160,84 @@ def scrape_articles(base_url):
             except Exception as e:
                 print(f"  ✗ {blog_handle}: {e}")
                 break
-    print(f"  ✅ Total articles: {len(articles)}")
+
+    print(f"  ✅ {len(articles)} articles")
     return articles
 
 
-def scrape_stores(base_url):
-    """Scrape authorized dealer/store locator data."""
-    print("\n🏪 Fetching store locator data...")
+def scrape_store_directory(base_url):
+    """Scrape actual store names, addresses from directory pages."""
     stores = []
-    try:
-        # Try the store directory page
-        url = f"{base_url}/tools/storelocator/directory"
-        resp = requests.get(url, headers=HEADERS, timeout=12)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            # Try to find store data in JSON embedded in page
-            scripts = soup.find_all("script")
-            for script in scripts:
-                if script.string and ("latitude" in script.string or "stores" in script.string.lower()):
-                    try:
-                        # Look for JSON data
-                        text = script.string
-                        start = text.find("[{")
-                        end = text.rfind("}]") + 2
-                        if start > -1 and end > 1:
-                            store_data = json.loads(text[start:end])
-                            for s in store_data:
-                                stores.append({
-                                    "name": s.get("name", s.get("title", "")),
-                                    "address": s.get("address", s.get("address1", "")),
-                                    "city": s.get("city", ""),
-                                    "country": s.get("country", ""),
-                                    "lat": float(s.get("latitude", s.get("lat", 0)) or 0),
-                                    "lon": float(s.get("longitude", s.get("lng", s.get("lon", 0))) or 0),
-                                    "brands": s.get("brands", s.get("tags", "")),
-                                    "url": s.get("url", s.get("link", f"{base_url}/tools/storelocator")),
-                                })
-                    except:
-                        pass
-    except Exception as e:
-        print(f"  ✗ Store scrape error: {e}")
+    seen = set()
+    print("\n🏪 Scraping store directory...")
 
-    print(f"  ✅ Total stores: {len(stores)}")
+    # First get all country/region links from the main directory page
+    try:
+        resp = requests.get(f"{base_url}/tools/storelocator/directory", headers=HEADERS, timeout=12)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        country_links = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/tools/storelocator/countries/" in href or "/tools/storelocator/regions/" in href:
+                full = urljoin(base_url, href)
+                if full not in country_links:
+                    country_links.append(full)
+        print(f"  Found {len(country_links)} country/region pages")
+    except Exception as e:
+        print(f"  ✗ Directory error: {e}")
+        country_links = []
+
+    # Also add country slugs directly
+    for slug in COUNTRY_SLUGS:
+        url = f"{base_url}/tools/storelocator/countries/{slug}"
+        if url not in country_links:
+            country_links.append(url)
+
+    # Scrape each country page for store listings
+    for country_url in country_links[:50]:  # cap at 50 pages
+        try:
+            resp = requests.get(country_url, headers=HEADERS, timeout=12)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # Find store links - they follow pattern /tools/storelocator/stores/HANDLE
+            store_links = []
+            for a in soup.find_all("a", href=True):
+                if "/tools/storelocator/stores/" in a["href"]:
+                    full = urljoin(base_url, a["href"])
+                    if full not in seen:
+                        seen.add(full)
+                        store_links.append(full)
+
+            # Also grab any store info directly from country page
+            text = get_text(soup)
+            if store_links:
+                print(f"  ✓ {country_url.split('/')[-1]}: {len(store_links)} stores")
+
+            # Scrape individual store pages
+            for store_url in store_links:
+                try:
+                    sresp = requests.get(store_url, headers=HEADERS, timeout=10)
+                    if sresp.status_code != 200:
+                        continue
+                    ssoup = BeautifulSoup(sresp.text, "html.parser")
+                    stext = get_text(ssoup)
+                    stitle = ssoup.title.string.strip() if ssoup.title else store_url
+                    if len(stext) > 100:
+                        stores.append({
+                            "url": store_url,
+                            "title": stitle,
+                            "content": f"Authorized Dealer: {stitle}\nURL: {store_url}\n{stext[:500]}"
+                        })
+                except:
+                    pass
+
+        except Exception as e:
+            print(f"  ✗ {country_url}: {e}")
+            continue
+
+    print(f"  ✅ {len(stores)} stores scraped")
     return stores
 
 
@@ -219,11 +275,11 @@ def main():
     print(f"WatchDNA Scraper — {datetime.now(timezone.utc).isoformat()}")
     products = scrape_products(BASE_URL)
     articles = scrape_articles(BASE_URL)
-    stores = scrape_stores(BASE_URL)
+    stores = scrape_store_directory(BASE_URL)
     pages = scrape_site(BASE_URL)
-    all_entries = products + articles + pages
-    print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
-    print(f"   {len(stores)} stores in locator")
+
+    all_entries = products + articles + stores + pages
+    print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(stores)} stores + {len(pages)} pages = {len(all_entries)} total")
 
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
         json.dump({
@@ -231,10 +287,9 @@ def main():
             "base_url": BASE_URL,
             "product_count": len(products),
             "article_count": len(articles),
-            "page_count": len(pages),
             "store_count": len(stores),
+            "page_count": len(pages),
             "pages": all_entries,
-            "stores": stores,
         }, f, indent=2, ensure_ascii=False)
 
     print("Saved to knowledge_base.json ✓")
@@ -242,7 +297,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
