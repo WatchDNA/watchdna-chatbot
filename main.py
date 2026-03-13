@@ -19,13 +19,63 @@ _brand_map_cache = None
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
 
-# Product types that are accessories — never recommend as watches
 ACCESSORY_TYPES = {
     "watch winder", "watch roll", "watch case", "safe", "accessories", "accessory",
-    "strap", "bracelet", "desk organizer", "desk organiser", "watch box",
-    "legion safes", "watch certificate", "8 piece watch winder", "16 piece watch winder",
+    "strap", "desk organizer", "desk organiser", "watch box", "legion safes",
+    "watch certificate", "8 piece watch winder", "16 piece watch winder",
     "6 piece watch winder", "double watch winder", "quad watch winder",
 }
+
+# Hardcoded contributor data with links
+CONTRIBUTORS = """
+CONTRIBUTORS (source: https://watchdna.com/pages/contributors):
+- Brent Robillard (@Calibre321) — Watch Photography and Reviews. Writer, educator, craftsman and watch enthusiast, author of four novels. https://watchdna.com/pages/contributors
+- Cagdas Onen — Watch Enthusiast & Founder of The Catalyst podcast. https://watchdna.com/pages/contributors
+- Carol Besler — Journalist. Has written for Forbes, The Robb Report, Watch and Culture, Hollywood Reporter, Nuvo, Watch Time. https://watchdna.com/pages/contributors
+- Colin Potts — Horologist & Watch Enthusiast. https://watchdna.com/pages/contributors
+- David Carrington — Founder and CEO of COMPASS Timepieces. https://watchdna.com/pages/contributors
+- Elizabeth Ionson — Sales & Training Professional. https://watchdna.com/pages/contributors
+- George Sully — Watch Enthusiast & Entrepreneur. https://watchdna.com/pages/contributors
+- Gian-Paolo Mazzotta — Tailor, Designer, Stylist & Watch Enthusiast. https://watchdna.com/pages/contributors
+- Grigor Garabedian — Head Watchmaker & Director of Service Operations, Fine Jewellery and Timepieces at Birks Group. https://watchdna.com/pages/contributors
+- Hakim El Kadiri — Founder of ELKA Watch Co. https://watchdna.com/pages/contributors
+- @Ian_Cognito — Watch Enthusiast. https://watchdna.com/pages/contributors
+- Jacky Ho — Watchmaker & Artist. https://watchdna.com/pages/contributors
+- Jeremy Freed — Journalist. https://watchdna.com/pages/contributors
+- Mark Fleminger — Watch Enthusiast & RedBar Toronto Chapter Head. https://watchdna.com/pages/contributors
+- Mikhail Gomes — Strategist - Marketing, PR & Content. https://watchdna.com/pages/contributors
+- Nabil Amdan — Watch Enthusiast. https://watchdna.com/pages/contributors
+- Phillip Plimmer — Professional Product/Industrial Designer specialist in Watch Design. https://watchdna.com/pages/contributors
+- Roberta Naas — Journalist, Author, Founder of ATimelyPerspective.com. https://watchdna.com/pages/contributors
+- Sanket Patel — Watch Enthusiast. https://watchdna.com/pages/contributors
+- Sean Shapiro (@VOICEOVERCOP) — Watch Enthusiast, Public Speaker, Podcaster & Opinion Sharer. https://watchdna.com/pages/contributors
+- Smartwatch Dick — Watch Enthusiast & Podcaster. https://watchdna.com/pages/contributors
+- Spiro Mandylor — Fashion Photographer & Style Expert. https://watchdna.com/pages/contributors
+- Sevan Khidichian (Trillium Watch Service) — Certified Watchmaker. https://watchdna.com/pages/contributors
+- Thomas Brissiaud — Founder of Tessé Watches. https://watchdna.com/pages/contributors
+- Thomas J. Sandrin — Watch Enthusiast & Entrepreneur. https://watchdna.com/pages/contributors
+- Tyler @HorologyObsessed — Watch Enthusiast. https://watchdna.com/pages/contributors
+- Tyler Worden — Industrial Designer & Founder of Worden Watch Studio. https://watchdna.com/pages/contributors
+- Victor @JustWatchesTV — Watch Enthusiast & Brand Distributor. https://watchdna.com/pages/contributors
+- Victoria Townsend — Watch Journalist & Horology Storyteller. https://watchdna.com/pages/contributors
+- WatchGuyGlasgow — Watch Enthusiast. https://watchdna.com/pages/contributors
+"""
+
+# Hardcoded tradeshows with correct URLs
+TRADESHOWS = """
+TRADESHOWS & EVENTS on WatchDNA (always list ALL of these with their links):
+- [Canadian Watches & Jewelry Show](https://watchdna.com/pages/canadian-watches-jewelry-show)
+- [Couture Show](https://watchdna.com/pages/coutureshow)
+- [Dubai Watch Week](https://watchdna.com/pages/dubai-watch-week)
+- [EPHJ – International Trade Show for High Precision](https://watchdna.com/pages/ephj-the-international-trade-show-for-high-precision)
+- [Hong Kong Watch & Clock Fair](https://watchdna.com/pages/hongkong-fair)
+- [JCK & Luxury](https://watchdna.com/pages/jck)
+- [Timepiece Show](https://watchdna.com/pages/timepieceshow)
+- [Time to Watches](https://watchdna.com/pages/time-to-watches)
+- [Watches & Wonders](https://watchdna.com/pages/watchesandwonders)
+- [Wind Up Watch Fair](https://watchdna.com/pages/windupwatchfair)
+- [We Love Watches](https://watchdna.com/pages/we-love-watches-2025-participating-brands)
+"""
 
 
 def get_knowledge_base():
@@ -123,7 +173,6 @@ def extract_budget(query: str):
 
 
 def _is_accessory(page: dict) -> bool:
-    """Return True if this product is an accessory rather than a watch."""
     for line in page.get("content", "").split("\n"):
         if line.startswith("Type:"):
             t = line.replace("Type:", "").strip().lower()
@@ -155,13 +204,10 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         is_article = "/blogs/" in url
 
         if is_product:
-            # Strict currency match — never mix markets
             if page.get("currency", "") != currency:
                 continue
-            # Skip zero-price — not sold in this market
             if page.get("price", 0) == 0:
                 continue
-            # Skip over budget
             if budget and page.get("price", 0) > budget:
                 continue
             if _is_accessory(page):
@@ -191,7 +237,6 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     elif is_article_query:
         pool = articles + other_pages + sorted(watches, key=score, reverse=True)[:5]
     else:
-        # Watch recommendations — shuffle for variety, keyword matches float to top
         if keywords:
             top = [w for w in sorted(watches, key=score, reverse=True) if score(w) > 0]
             rest = [w for w in watches if score(w) == 0]
@@ -218,7 +263,7 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 === LINK FORMAT — ABSOLUTE RULES ===
 - Every link MUST be: [Descriptive Title](https://exact-url.com)
 - Use the product/article TITLE as link text. NEVER "here", "View here", "Read article", "Check it out".
-- ONLY use URLs from the WEBSITE CONTENT below. Never construct or guess URLs.
+- ONLY use URLs from the WEBSITE CONTENT or hardcoded data below. Never construct or guess URLs.
 - No fake links. One link per item. Never link the same item twice.
 
 === CURRENCY & PRODUCTS ===
@@ -227,7 +272,6 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 - Show prices exactly as in the content. Do NOT convert or calculate.
 - Only recommend products from WEBSITE CONTENT. Never invent product names or URLs.
 - Format: [Product Name](url) — {symbol}X.XX {currency}
-- Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
 === WATCH RECOMMENDATIONS — STRICT RULES ===
 - If the user asks for watch recommendations and has NOT specified a currency in this conversation, ALWAYS ask first:
@@ -235,26 +279,31 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
 - NEVER recommend watches from a different currency than what was asked.
 - ONLY recommend products with a /products/ URL from WEBSITE CONTENT — these are the only real store listings.
-- NEVER recommend watches mentioned only in blog articles or press releases — those are editorial content, not store listings.
+- NEVER recommend watches mentioned only in blog articles or press releases.
 - When asked for accessories (winders, straps, safes), only recommend /products/ accessories — never watches.
-- NEVER mix accessories into watch recommendation responses.
+- DWISS bracelets are WATCHES not accessories — never list them under accessories.
 - Each time you give recommendations, vary your selections across different brands, price points, and styles.
 
-=== BRAND QUESTIONS ===
-- Use BOTH site content AND your general watch knowledge for brand history, founders, country of origin.
-- Always check if the brand has products on WatchDNA and mention with a link if so.
+=== BRANDS ===
+- When asked about brands, ONLY talk about brands that appear on WatchDNA at https://watchdna.com/pages/brands-dna
+- For every brand mentioned, always link to: [Brand Name](https://watchdna.com/pages/brands-dna#brand-name)
+- Do NOT mention brands like Rolex, Patek Philippe, Omega, TAG Heuer, Seiko etc. unless they are in the WEBSITE CONTENT — WatchDNA only carries specific brands.
+- If asked about a brand not on WatchDNA, say it's not currently carried and suggest browsing https://watchdna.com/pages/brands-dna
 
-=== ARTICLES ===
-- When asked for articles, just list the most recent ones from WEBSITE CONTENT — newest Published date first.
-- Do NOT ask which section. Mix both blogs and show the latest.
-- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
-- ONLY use articles from WEBSITE CONTENT with a real URL field. NEVER invent titles, authors, dates, or URLs.
-- If an article has no URL in the content, do not mention it.
+=== CONTRIBUTORS ===
+- Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
+- For each contributor mentioned, link to: https://watchdna.com/pages/contributors
+- Format: [Contributor Name](https://watchdna.com/pages/contributors) — Role/bio
 
 === TRADESHOWS & AWARDS ===
-- List ALL tradeshows or awards from the WEBSITE CONTENT with their real links.
-- Never only show one. Never say "I don't have that link."
-- Format: [Name](url) — one line each.
+- Use the TRADESHOWS DATA below — always list ALL of them with their links when asked.
+- Never only show one or two. Never invent tradeshow names or URLs.
+
+=== ARTICLES ===
+- When asked for articles, list the most recent ones from WEBSITE CONTENT.
+- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
+- ONLY use articles that have a real /blogs/ URL in WEBSITE CONTENT. NEVER invent titles, dates, or URLs.
+- If an article has no real Published date, omit the date rather than showing a fake one.
 
 === STORE LOCATOR ===
 - Give them the link: https://watchdna.com/tools/storelocator
@@ -263,8 +312,15 @@ KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
 - Store Locator: https://watchdna.com/tools/storelocator
 - Brands Directory: https://watchdna.com/pages/brands-dna
-- Watch Enthusiast: https://watchdna.com/blogs/watch-enthusiast
+- Contributors: https://watchdna.com/pages/contributors
+- Watch Enthusiast Blog: https://watchdna.com/blogs/watch-enthusiast
 - Press Releases: https://watchdna.com/blogs/press
+
+CONTRIBUTORS DATA:
+{contributors}
+
+TRADESHOWS DATA:
+{tradeshows}
 
 STORE LOCATOR LINKS BY BRAND:
 {store_links}
@@ -361,6 +417,8 @@ async def chat(req: ChatRequest):
     system = SYSTEM_PROMPT.format(
         currency=currency,
         symbol=symbol,
+        contributors=CONTRIBUTORS,
+        tradeshows=TRADESHOWS,
         store_links=store_links,
         knowledge=knowledge + store_hint + expensive_hint,
     )
@@ -388,22 +446,16 @@ async def debug_currency(req: ChatRequest):
     currencies_in_kb = list(set(p.get("currency", "MISSING") for p in all_products))
     return {
         "resolved_currency": currency,
-        "req_currency_field": req.currency,
-        "message_scanned": req.message,
         "watches_for_currency": len(matching),
         "all_currencies_in_kb": sorted(currencies_in_kb),
-        "sample_products": [
-            {"title": p["title"], "price": p["price"], "currency": p["currency"]}
-            for p in matching[:5]
-        ]
+        "sample_products": [{"title": p["title"], "price": p["price"]} for p in matching[:5]]
     }
 
 
 @app.get("/health")
 async def health():
     kb_exists = Path(KNOWLEDGE_FILE).exists()
-    last_scraped = None
-    product_count = 0
+    last_scraped, product_count = None, 0
     if kb_exists:
         with open(KNOWLEDGE_FILE) as f:
             kb = json.load(f)
