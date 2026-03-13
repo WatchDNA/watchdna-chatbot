@@ -76,13 +76,17 @@ def format_product(p, base_url):
     body = BeautifulSoup(p.get("body_html", "") or "", "html.parser").get_text()
     tags = ", ".join(p.get("tags", []))
     variants = p.get("variants", [])
-    price = variants[0].get("price") if variants else "N/A"
+    price_str = variants[0].get("price", "0") if variants else "0"
+    try:
+        price_num = float(price_str)
+    except:
+        price_num = 0
     product_url = f"{base_url}/products/{handle}"
     content = (
         f"Product: {title}\nBrand/Vendor: {vendor}\nType: {product_type}\n"
-        f"Price: ${price} CAD\nURL: {product_url}\nTags: {tags}\nDescription: {body[:300]}"
+        f"Price: ${price_str} CAD\nURL: {product_url}\nTags: {tags}\nDescription: {body[:300]}"
     )
-    return {"url": product_url, "title": title, "content": content, "handle": handle}
+    return {"url": product_url, "title": title, "content": content, "handle": handle, "price": price_num}
 
 
 def fetch_collection(base_url, handle, seen_handles):
@@ -137,7 +141,14 @@ def scrape_articles(base_url):
     seen_urls = set()
     print("\n📰 Fetching articles...")
 
+    BLOG_LABELS = {
+        "watch_enthusiast": "Community Article (Watch Enthusiast)",
+        "press": "Press Release",
+    }
+
     for blog_handle in BLOG_HANDLES:
+        blog_label = BLOG_LABELS.get(blog_handle, blog_handle)
+        blog_page_url = f"{base_url}/blogs/{blog_handle}"
         page = 1
         while page <= 10:
             try:
@@ -158,16 +169,24 @@ def scrape_articles(base_url):
                         continue
                     seen_urls.add(article_url)
                     body = BeautifulSoup(post.get("body_html", "") or "", "html.parser").get_text()
-                    published = post.get("published_at", "")[:10]  # just date
+                    published = post.get("published_at", "")[:10]
                     author = post.get("author", "")
                     content = (
+                        f"Article Type: {blog_label}\n"
                         f"Article: {title}\n"
                         f"Published: {published}\n"
                         f"Author: {author}\n"
                         f"URL: {article_url}\n"
+                        f"Blog Page: {blog_page_url}\n"
                         f"Content: {body[:600]}"
                     )
-                    articles.append({"url": article_url, "title": title, "content": content})
+                    articles.append({
+                        "url": article_url,
+                        "title": title,
+                        "content": content,
+                        "published": published,
+                        "blog": blog_handle
+                    })
                 print(f"  ✓ {blog_handle} page {page}: {len(posts)} articles")
                 if len(posts) < 50:
                     break
@@ -175,6 +194,9 @@ def scrape_articles(base_url):
             except Exception as e:
                 print(f"  ✗ {blog_handle}: {e}")
                 break
+
+    # Sort newest first so AI sees latest articles at top of context
+    articles.sort(key=lambda x: x.get("published", ""), reverse=True)
 
     print(f"  ✅ {len(articles)} articles")
     return articles
@@ -312,7 +334,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
