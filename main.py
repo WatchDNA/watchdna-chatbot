@@ -21,6 +21,44 @@ _brand_map_cache = None
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
 
+CONTRIBUTORS = """
+WatchDNA Contributors (source: https://watchdna.com/pages/contributors):
+
+- BRENT ROBILLARD (@Calibre321) — Watch Photography and Reviews. Writer, educator, craftsman, and watch enthusiast. Author of four novels.
+- CAGDAS ONEN — Watch Enthusiast & Founder of The Catalyst podcast. YouTube: https://www.youtube.com/c/CagdasONEN
+- CAROL BESLER — Journalist. Written for Forbes, Robb Report, The Globe and Mail, Hodinkee, Patek Philippe Magazine and more. Former editor-in-chief of Canadian Jeweller for 16 years.
+- COLIN POTTS — Horologist & Watch Enthusiast. Founder of luxury watch brand Jakob Eitan and owner of watchoffthecuff.com (Milton, Ontario). Member of the Horology Society of New York.
+- DAVID CARRINGTON — Founder and CEO of COMPASS Timepieces. Began developing the brand with a Swiss team in La Chaux-de-Fonds in 2022. YouTube: https://www.youtube.com/@compasstimepieces/
+- ELIZABETH IONSON — Sales & Training Professional. 25+ years in sales/training; spent 12 years as Canadian Country Manager for TAG Heuer.
+- GEORGE SULLY — Watch Enthusiast & Entrepreneur. Toronto-based designer, CAFA Change-maker Award winner, creator of Black Designers of Canada. https://blackdesignersofcanada.com/
+- GIAN-PAOLO MAZZOTTA — Tailor, Designer, Stylist & Watch Enthusiast. Head tailor at ILLI Bespoke and The Military Tailor; recognized by Sharp Magazine and BlogTO as one of Toronto's best bespoke tailors.
+- GRIGOR GARABEDIAN — Head Watchmaker & National Director of Service Operations at Birks Group Inc.
+- HAKIM EL KADIRI — Founder of ELKA Watch Co. 25+ years in the watch industry; brand inspired by a defunct Dutch watch brand from the 1960s-70s.
+- @IAN_COGNITO — Watch Enthusiast. Instagram watch community member since 2015; has worked with Hamilton, Oris, and Citizen.
+- JACKY HO — Watchmaker & Artist. Background in textile engineering and fashion design; writes for WatchDNA on unconventional watch design.
+- JEREMY FREED — Journalist based in Halifax, Nova Scotia. Writes for Sharp, The Globe & Mail, GQ.com, and Hodinkee.
+- MARK FLEMINGER — Watch Enthusiast & RedBar Toronto Chapter Head. Collects IWC, Omega, Vintage Longines, Tissot, and Nivada.
+- MIKHAIL GOMES — Strategist (Marketing, PR & Content). 8+ years experience, 175+ global brands, former Content & Influencer Marketing Strategist at Kapoor Watch Company.
+- NABIL AMDAN — Watch Enthusiast. Editor at Chrono Chronicles and Hairspring; focuses on luxury independent watchmaking and horology history.
+- PHILLIP PLIMMER — Professional Product/Industrial Designer specializing in Watch Design. 20+ years, 200+ brands across 20+ countries. Graduate of the Royal College of Art, London.
+- ROBERTA NAAS — Journalist, Author, Founder of ATimelyPerspective.com. First female watch journalist in America; pioneer in the watch world since 1984. Wikipedia: https://en.wikipedia.org/wiki/Roberta_Naas/
+- SANKET PATEL — Watch Enthusiast & content creator. Runs The Indian Watch Reviewer on YouTube and TikTok (@theindianwatchreviewer).
+- SEAN SHAPIRO (@VOICEOVERCOP) — Watch Enthusiast, Public Speaker, Podcaster. 24-year law enforcement veteran; 673K+ TikTok followers.
+- SMARTWATCH DICK — Watch Enthusiast & Podcaster. Fact checker for the Watch You Talking About podcast. YouTube: https://youtube.com/@watchyoutalkinabout
+- SPIRO MANDYLOR — Fashion Photographer & Style Expert. First Canadian Olympus Photography Visionary (2012); E! Celebrity Style Story panelist; collaborated with Michael Kors, Diesel, Lacoste, and more.
+- SEVAN KHIDICHIAN (Trillium Watch Service) — Certified Watchmaker. Fourth-generation watchmaker, trained in Paris at Cartier and Patek Philippe. Co-founder of Trillium Watch Service.
+- THOMAS BRISSIAUD — Founder of Tessé Watches (founded 2024). Brand inspired by his grandfather Michel; Swiss craftsmanship, vintage-inspired design.
+- THOMAS J. SANDRIN, MBA — Watch Enthusiast & Entrepreneur. 16+ years luxury watch industry; former Canadian Brand Manager for Hamilton (Swatch Group); MBA from Australian Institute of Business.
+- TYLER @HOROLOGYOBSESSED — Watch Enthusiast. Writer and photographer for Calibre321 online magazine; content creator passionate about watches and motorsport.
+- TYLER WORDEN — Industrial Designer & Founder of Worden Watch Studio. Studied Industrial Design at Carleton University; designs emotionally expressive timepieces.
+- VICTOR (@JUSTWATCHESTV) — Watch Enthusiast & Brand Distributor. 15+ years in the hobby; YouTube channel covering Laco, Zeppelin and more. https://www.youtube.com/@justwatchestv
+- VICTORIA TOWNSEND — Watch Journalist & Horology Storyteller. Ontario-born journalist; career on Bahrain TV and in Paris; covers Swiss watch shows, CEOs and designers. Instagram @victoriainparis.
+- WATCHGUYGLASGOW — Watch Enthusiast & Collector. Passion for horology sparked by family ties; focuses on watch photography and the collector community.
+
+Full list: https://watchdna.com/pages/contributors
+"""
+
+
 
 def get_knowledge_base():
     global _kb_cache
@@ -117,11 +155,74 @@ def extract_budget(query: str):
 
 ARTICLE_QUERY_WORDS = [
     "article", "articles", "latest", "recent", "newest", "blog", "press",
-    "release", "story", "stories", "post", "posts", "published", "news", "read"
+    "release", "story", "stories", "post", "posts", "published", "news", "read", "show"
 ]
 
 def is_article_query(query: str) -> bool:
     return any(w in query.lower() for w in ARTICLE_QUERY_WORDS)
+
+
+ARTICLE_SOURCES = [
+    {"url": "https://watchdna.com/blogs/press",            "label": "Press Release"},
+    {"url": "https://watchdna.com/blogs/watch-enthusiast", "label": "Community Article"},
+]
+_SCRAPE_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
+
+
+def fetch_live_articles(limit: int = 12) -> list:
+    """Scrape blog listing pages live — always returns real current dates."""
+    results = []
+    seen = set()
+    for source in ARTICLE_SOURCES:
+        try:
+            resp = requests.get(source["url"], headers=_SCRAPE_HEADERS, timeout=10)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for heading in soup.find_all(["h2", "h3"]):
+                a = heading.find("a", href=True)
+                if not a:
+                    continue
+                href = a["href"]
+                if not href.startswith("http"):
+                    href = "https://watchdna.com" + href
+                if href in seen or "/blogs/" not in href:
+                    continue
+                seen.add(href)
+                title = a.get_text(strip=True)
+                if not title or len(title) < 5:
+                    continue
+                date_str = ""
+                card = heading.parent
+                for _ in range(4):
+                    if card is None:
+                        break
+                    time_tag = card.find("time")
+                    if time_tag:
+                        date_str = time_tag.get("datetime", time_tag.get_text(strip=True))[:10]
+                        break
+                    text = card.get_text(" ", strip=True)
+                    m = re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}", text)
+                    if m:
+                        try:
+                            from datetime import datetime as _dt
+                            date_str = _dt.strptime(m.group(0), "%B %d, %Y").strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
+                        break
+                    card = card.parent
+                results.append({"title": title, "url": href, "date": date_str, "type": source["label"]})
+        except Exception as e:
+            print(f"[LIVE ARTICLES] {source['url']}: {e}")
+    results.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return results[:limit]
+
+
+def build_live_article_context(articles: list) -> str:
+    lines = ["LIVE ARTICLES (fetched live from watchdna.com — use these dates, ignore any KB dates):"]
+    for i, a in enumerate(articles, 1):
+        lines.append(f"{i}. {a['title']} | {a['date'] or 'recent'} | {a['type']} | {a['url']}")
+    return "\n".join(lines)
 
 
 def load_knowledge(query: str = "", currency: str = "CAD", live_article_context: str = "") -> str:
@@ -133,27 +234,20 @@ def load_knowledge(query: str = "", currency: str = "CAD", live_article_context:
     budget = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
 
-    articles = []
-    non_articles = []
-
+    articles, non_articles = [], []
     for page in data.get("pages", []):
         url = page.get("url", "")
-        is_product = "/products/" in url
-        is_article = "/blogs/" in url
-
-        if is_product:
+        if "/products/" in url:
             if page.get("currency", "") != currency:
                 continue
             if budget and page.get("price", 0) > budget:
                 continue
-
-        if is_article:
+        if "/blogs/" in url:
             articles.append(page)
         else:
             non_articles.append(page)
 
     articles.sort(key=lambda p: p.get("published", ""), reverse=True)
-
     product_pages = [p for p in non_articles if "/products/" in p.get("url", "")]
     print(f"[LOAD_KNOWLEDGE] currency={currency} | products={len(product_pages)} | articles={len(articles)}")
 
@@ -162,17 +256,13 @@ def load_knowledge(query: str = "", currency: str = "CAD", live_article_context:
         return sum(1 for kw in keywords if kw in text)
 
     if is_article_query(query):
-        scored_non = sorted(non_articles, key=score, reverse=True)[:15]
-        ordered = articles + scored_non
+        ordered = articles + sorted(non_articles, key=score, reverse=True)[:15]
     elif keywords:
-        all_pages = articles + non_articles
-        ordered = sorted(all_pages, key=score, reverse=True)[:40]
+        ordered = sorted(articles + non_articles, key=score, reverse=True)[:40]
     else:
         ordered = articles + non_articles
 
-    # Prepend live article data if provided — this always wins over stale KB dates
     context = live_article_context + "\n\n" if live_article_context else ""
-
     for page in ordered:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
         if len(context) + len(entry) > 22000:
@@ -183,6 +273,18 @@ def load_knowledge(query: str = "", currency: str = "CAD", live_article_context:
 SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a global directory and community for watch lovers.
 
 PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never say "As an AI".
+
+=== RESPONSE LENGTH — CRITICAL ===
+- Keep ALL responses SHORT. Max 5-6 lines for simple questions, max 8-10 lines for complex ones.
+- Never pad with filler phrases like "Feel free to ask!", "I hope that helps!", "Enjoy reading!", "Let me know if you need more!"
+- Lists: max 5 items unless user explicitly asks for more.
+- One link per item. No repeated links.
+- Get to the point immediately. No preamble.
+
+=== CONTRIBUTORS ===
+- For ANY question about WatchDNA contributors or who writes for WatchDNA, use ONLY the CONTRIBUTORS DATA section below.
+- Format: **Name** — Role. One line per person. Link their URL if they have one.
+- If asked about a specific contributor, give their name, role, and a 1-2 sentence bio from the data.
 
 === LINK FORMAT — ABSOLUTE RULES ===
 - Every link MUST be: [Descriptive Title](https://exact-url.com)
@@ -224,6 +326,9 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Step 1: No brand → "Which brand are you looking for?"
 - Step 2: Brand, no location → "What's your postal code or city?"
 - Step 3: Both → give filtered link from STORE LOCATOR LINKS, tell them to type postal code in the map search bar.
+
+CONTRIBUTORS DATA:
+{contributors}
 
 KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
@@ -316,13 +421,12 @@ async def chat(req: ChatRequest):
 
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
     # load_knowledge filters pages by page["currency"] == currency exactly
-    # For article queries, fetch live from the site so dates are always accurate
     live_ctx = ""
     if is_article_query(req.message):
         try:
-            live_arts = fetch_live_articles(limit=15)
+            live_arts = fetch_live_articles(limit=12)
             live_ctx = build_live_article_context(live_arts)
-            print(f"[LIVE ARTICLES] fetched {len(live_arts)} articles")
+            print(f"[LIVE ARTICLES] fetched {len(live_arts)}")
         except Exception as e:
             print(f"[LIVE ARTICLES] failed: {e}")
     knowledge = load_knowledge(req.message, currency=currency, live_article_context=live_ctx)
@@ -371,6 +475,7 @@ async def chat(req: ChatRequest):
         currency=currency,
         symbol=symbol,
         store_links=store_links,
+        contributors=CONTRIBUTORS,
         knowledge=knowledge + store_hint + expensive_hint,
     )
 
@@ -417,111 +522,3 @@ async def health():
         with open(KNOWLEDGE_FILE) as f:
             last_scraped = json.load(f).get("scraped_at")
     return {"status": "ok", "knowledge_base": kb_exists, "last_scraped": last_scraped}
-
-
-# ---------------------------------------------------------------------------
-# LIVE ARTICLE FETCHER — bypasses knowledge base, always returns current data
-# ---------------------------------------------------------------------------
-ARTICLE_SOURCES = [
-    {"url": "https://watchdna.com/blogs/press",             "label": "Press Release"},
-    {"url": "https://watchdna.com/blogs/watch-enthusiast",  "label": "Community Article"},
-]
-_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
-
-def fetch_live_articles(limit: int = 10) -> list:
-    """Scrape the blog listing pages live and return articles sorted newest-first."""
-    results = []
-    seen = set()
-    for source in ARTICLE_SOURCES:
-        try:
-            resp = requests.get(source["url"], headers=_HEADERS, timeout=10)
-            if resp.status_code != 200:
-                continue
-            soup = BeautifulSoup(resp.text, "html.parser")
-            # Each article card has an <h3> or <h2> with an <a> inside
-            for heading in soup.find_all(["h2", "h3"]):
-                a = heading.find("a", href=True)
-                if not a:
-                    continue
-                href = a["href"]
-                if not href.startswith("http"):
-                    href = "https://watchdna.com" + href
-                if href in seen or "/blogs/" not in href:
-                    continue
-                seen.add(href)
-                title = a.get_text(strip=True)
-                if not title or len(title) < 5:
-                    continue
-                # Date: look for a sibling or nearby element with a date
-                date_str = ""
-                card = heading.parent
-                for _ in range(4):          # walk up a few levels
-                    if card is None:
-                        break
-                    time_tag = card.find("time")
-                    if time_tag:
-                        date_str = time_tag.get("datetime", time_tag.get_text(strip=True))[:10]
-                        break
-                    # also check text nodes that look like dates
-                    text = card.get_text(" ", strip=True)
-                    import re as _re
-                    m = _re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}", text)
-                    if m:
-                        from datetime import datetime as _dt
-                        try:
-                            date_str = _dt.strptime(m.group(0), "%B %d, %Y").strftime("%Y-%m-%d")
-                        except:
-                            pass
-                        break
-                    card = card.parent
-                results.append({
-                    "title": title,
-                    "url": href,
-                    "date": date_str,
-                    "type": source["label"],
-                })
-        except Exception as e:
-            print(f"[LIVE ARTICLES] {source['url']}: {e}")
-
-    # Sort newest-first (empty date falls to bottom)
-    results.sort(key=lambda x: x.get("date", ""), reverse=True)
-    return results[:limit]
-
-
-def build_live_article_context(articles: list) -> str:
-    lines = ["LIVE ARTICLES (fetched right now from watchdna.com — these are the REAL latest articles):"]
-    for i, a in enumerate(articles, 1):
-        lines.append(
-            f"{i}. Article: {a['title']}\n"
-            f"   Published: {a['date'] or 'recent'}\n"
-            f"   Type: {a['type']}\n"
-            f"   URL: {a['url']}"
-        )
-    return "\n".join(lines)
-
-
-@app.get("/articles")
-async def get_articles(limit: int = 10):
-    """Debug endpoint — see what the live article fetcher returns."""
-    articles = fetch_live_articles(limit)
-    return {"count": len(articles), "articles": articles}
-
-
-@app.post("/scrape")
-async def trigger_scrape():
-    """Trigger a knowledge base rescrape in the background."""
-    async def run_scrape():
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "python3", "scraper.py",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            stdout, _ = await proc.communicate()
-            global _kb_cache
-            _kb_cache = None   # bust cache so next request reloads
-            print("[SCRAPE] Done:\n" + stdout.decode()[-2000:])
-        except Exception as e:
-            print(f"[SCRAPE] Error: {e}")
-    asyncio.create_task(run_scrape())
-    return {"status": "scrape started — check /health in ~2 minutes"}
