@@ -226,51 +226,41 @@ class ChatRequest(BaseModel):
 
 
 def detect_currency_in_text(text: str) -> str | None:
-    """
-    Robustly detect a currency code in a piece of text.
-    Uses word-boundary matching so 'usd' inside 'used' doesn't trigger USD.
-    Returns the matched currency code (uppercase) or None.
-    """
+    """Detect a standalone currency code using word boundaries."""
     text_upper = text.upper()
-    # Word-boundary pattern: currency must be surrounded by non-alpha characters
     for cur in VALID_CURRENCIES:
-        if re.search(r'(?<![A-Z])' + cur + r'(?![A-Z])', text_upper):
+        if re.search(r"\b" + cur + r"\b", text_upper):
             return cur
     return None
 
 
 def resolve_currency(req: "ChatRequest") -> str:
     """
-    Determine the correct currency for this request using a clear priority chain:
-      1. Current user message (most authoritative — user just said it)
-      2. Most recent USER turn in history that contains a currency (newest first)
-         — only USER turns, never assistant turns which frequently echo currency names
-      3. Widget-reported currency from Shopify (req.currency)
-      4. Final fallback: CAD
+    Priority:
+      1. Current user message
+      2. Most recent USER turn in history (newest first) — skips assistant turns
+      3. Fallback to CAD
+
+    Intentionally ignores req.currency (Shopify widget) because it always
+    sends the store default (CAD) and overrides what the user said in chat.
     """
     # 1. Current message
     found = detect_currency_in_text(req.message)
     if found:
-        print(f"[CURRENCY] Found in current message: {found}")
+        print(f"[CURRENCY] From current message: {found}")
         return found
 
-    # 2. Scan only USER turns in history, newest first
-    for h in reversed(req.history[-20:]):
+    # 2. Most recent USER turn in history
+    for h in reversed(req.history):
         if h.get("role") != "user":
             continue
         found = detect_currency_in_text(h.get("content", ""))
         if found:
-            print(f"[CURRENCY] Found in history (user turn): {found}")
+            print(f"[CURRENCY] From history user turn: {found}")
             return found
 
-    # 3. Widget / Shopify reported currency
-    widget_currency = req.currency.upper()
-    if widget_currency in VALID_CURRENCIES:
-        print(f"[CURRENCY] Using widget currency: {widget_currency}")
-        return widget_currency
-
-    # 4. Fallback
-    print("[CURRENCY] Falling back to CAD")
+    # 3. Fallback
+    print("[CURRENCY] No currency in conversation, defaulting to CAD")
     return "CAD"
 
 
@@ -342,6 +332,27 @@ async def chat(req: ChatRequest):
         temperature=0.7,
     )
     return {"reply": response.choices[0].message.content}
+
+
+@app.post("/debug-currency")
+async def debug_currency(req: ChatRequest):
+    """Test endpoint — call this to see exactly what currency is resolved and how many products load."""
+    currency = resolve_currency(req)
+    data = get_knowledge_base()
+    all_products = [p for p in data.get("pages", []) if "/products/" in p.get("url", "")]
+    matching = [p for p in all_products if p.get("currency", "") == currency]
+    currencies_in_kb = list(set(p.get("currency", "MISSING") for p in all_products))
+    return {
+        "resolved_currency": currency,
+        "req_currency_field": req.currency,
+        "message_scanned": req.message,
+        "products_in_kb_for_currency": len(matching),
+        "all_currencies_in_kb": sorted(currencies_in_kb),
+        "sample_products": [
+            {"title": p["title"], "price": p["price"], "currency": p["currency"]}
+            for p in matching[:5]
+        ]
+    }
 
 
 @app.get("/health")
