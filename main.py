@@ -223,19 +223,30 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    # Determine currency — message overrides widget setting
-    currency = req.currency.upper() if req.currency.upper() in VALID_CURRENCIES else "CAD"
+    # Determine currency from user messages only (not bot responses)
+    # Check current message first
+    currency = None
+    msg_lower = req.message.lower().strip()
     for cur in VALID_CURRENCIES:
-        if cur.lower() in req.message.lower():
+        if cur.lower() == msg_lower or f" {cur.lower()} " in f" {msg_lower} ":
             currency = cur
             break
-    # Check history if message didn't specify
-    if currency == (req.currency.upper() if req.currency.upper() in VALID_CURRENCIES else "CAD"):
-        for h in req.history[-6:]:
-            for cur in VALID_CURRENCIES:
-                if cur.lower() in h.get("content", "").lower():
-                    currency = cur
-                    break
+
+    # Check user messages in history (role=user only, not assistant)
+    if not currency:
+        for h in reversed(req.history[-10:]):
+            if h.get("role") == "user":
+                h_lower = h.get("content", "").lower().strip()
+                for cur in VALID_CURRENCIES:
+                    if cur.lower() == h_lower or f" {cur.lower()} " in f" {h_lower} ":
+                        currency = cur
+                        break
+            if currency:
+                break
+
+    # Fall back to widget currency, then CAD
+    if not currency:
+        currency = req.currency.upper() if req.currency.upper() in VALID_CURRENCIES else "CAD"
 
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
     knowledge = load_knowledge(req.message, currency=currency)
