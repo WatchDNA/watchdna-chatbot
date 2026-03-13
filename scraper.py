@@ -1,35 +1,43 @@
 """
 scraper.py — WatchDNA knowledge base builder.
-Fetches products across all 5 currency markets, blog articles, and site pages.
+Uses Shopify Storefront API to fetch REAL prices per currency market.
+
+WHY THE OLD SCRAPER WAS BROKEN:
+  /products.json ignores ?currency= and ?country= params entirely.
+  It always returns CAD prices. The scraper was just re-labelling the
+  same CAD prices as USD/GBP/etc., which is why links only worked in CAD
+  and all other markets showed wrong prices.
+
+HOW THIS IS FIXED:
+  We use Shopify's Storefront API with a @inContext(country: XX) directive
+  which returns genuine local prices for each market.
+
+REQUIRED: Set SHOPIFY_STOREFRONT_TOKEN env var.
+  Get it from: Shopify Admin → Apps → Develop apps → your app → Storefront API access token
+  The token needs: unauthenticated_read_product_listings permission
 """
 
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import json, os
+import json, os, time
 from datetime import datetime, timezone
 
 BASE_URL = os.environ.get("SHOPIFY_URL", "https://watchdna.com")
+SHOP_DOMAIN = "watchdna.myshopify.com"  # UPDATE if different
+STOREFRONT_TOKEN = os.environ.get("SHOPIFY_STOREFRONT_TOKEN", "")
+STOREFRONT_URL = f"https://{SHOP_DOMAIN}/api/2024-01/graphql.json"
+
 MAX_SITE_PAGES = 80
 BASE_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
 
-# All 5 Shopify markets
+# Shopify country codes that trigger each currency
 MARKETS = [
-    {"currency": "CAD", "symbol": "$",   "country": "CA"},
-    {"currency": "USD", "symbol": "$",   "country": "US"},
-    {"currency": "GBP", "symbol": "£",   "country": "GB"},
-    {"currency": "CHF", "symbol": "CHF", "country": "CH"},
-    {"currency": "EUR", "symbol": "€",   "country": "FR"},
-]
-
-# Only watch/accessory collections — excludes boxes, tools, etc.
-WATCH_COLLECTIONS = [
-    "watches",
-    "arilus", "boss", "calvin-klein", "coach", "dwiss", "ebel", "elka",
-    "exaequo", "fortis", "lacoste", "luminox", "micromilspec", "mido",
-    "movado", "naga-time-co", "normalzeit", "norqain", "raymond-weil",
-    "reservoir", "solar-aqua", "sovrygn", "stil-timepieces",
-    "tesse-watches", "u-boat", "withings", "worden",
+    {"currency": "CAD", "symbol": "$",    "country": "CA"},
+    {"currency": "USD", "symbol": "$",    "country": "US"},
+    {"currency": "GBP", "symbol": "£",    "country": "GB"},
+    {"currency": "CHF", "symbol": "CHF ", "country": "CH"},
+    {"currency": "EUR", "symbol": "€",    "country": "FR"},
 ]
 
 BLOG_HANDLES = ["watch_enthusiast", "press"]
@@ -43,21 +51,147 @@ PRIORITY_PATHS = [
     "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
     "/pages/blogs", "/pages/stories", "/pages/community-reads",
     "/blogs/press", "/blogs/watch-enthusiast",
-    # Tradeshows
     "/pages/watchesandwonders", "/pages/windupwatchfair",
     "/pages/dubai-watch-week", "/pages/jck",
     "/pages/canadian-watches-jewelry-show", "/pages/coutureshow",
     "/pages/ephj-the-international-trade-show-for-high-precision",
     "/pages/hongkong-fair", "/pages/timepieceshow", "/pages/time-to-watches",
     "/pages/we-love-watches-2025-participating-brands",
-    # Awards
     "/pages/timepiece-world-awards", "/pages/the-temporis-international-awards",
     "/pages/grand-prix-horlogerie-geneve",
     "/pages/the-42nd-hong-kong-watch-clock-design-competition",
-    # Community & media
     "/pages/local-community", "/pages/faq",
     "/pages/favourite-rssfeeds", "/pages/accesories-directory",
 ]
+
+# GraphQL query — @inContext(country: $country) gives real local prices
+PRODUCTS_QUERY = """
+query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $country) {
+  products(first: 50, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      title
+      handle
+      vendor
+      productType
+      tags
+      description(truncateAt: 300)
+      priceRange {
+        minVariantPrice {
+          amount
+          currencyCode
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def storefront_fetch_all_products(market):
+    """Fetch all products for a market using Storefront API with correct local pricing."""
+    if not STOREFRONT_TOKEN:
+        raise RuntimeError(
+            "SHOPIFY_STOREFRONT_TOKEN env var not set.\n"
+            "Get it from: Shopify Admin → Apps → Develop apps → Storefront API access token\n"
+            "Required permission: unauthenticated_read_product_listings"
+        )
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Storefront-Access-Token": STOREFRONT_TOKEN,
+    }
+
+    products = []
+    cursor = None
+    page = 1
+
+    while True:
+        variables = {"country": market["country"], "cursor": cursor}
+        resp = requests.post(
+            STOREFRONT_URL,
+            json={"query": PRODUCTS_QUERY, "variables": variables},
+            headers=headers,
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        if "errors" in data:
+            print(f"    GraphQL errors: {data['errors']}")
+            break
+
+        nodes = data["data"]["products"]["nodes"]
+        page_info = data["data"]["products"]["pageInfo"]
+
+        for node in nodes:
+            price_info = node["priceRange"]["minVariantPrice"]
+            price_num = float(price_info["amount"])
+            currency = price_info["currencyCode"]  # Real currency from Shopify
+            symbol = market["symbol"]
+            handle = node["handle"]
+            product_url = f"{BASE_URL}/products/{handle}"
+
+            # Skip non-watch products
+            title_lower = node["title"].lower()
+            type_lower = (node["productType"] or "").lower()
+            if any(kw in title_lower or kw in type_lower
+                   for kw in ["box", "watch box", "storage", "packaging", "gift box"]):
+                continue
+
+            tags = ", ".join(node.get("tags", []))
+            content = (
+                f"Product: {node['title']}\n"
+                f"Brand/Vendor: {node['vendor']}\n"
+                f"Type: {node['productType']}\n"
+                f"Price: {symbol}{price_num:.2f} {currency}\n"
+                f"URL: {product_url}\n"
+                f"Tags: {tags}\n"
+                f"Description: {node.get('description', '')}"
+            )
+
+            products.append({
+                "url": product_url,
+                "title": node["title"],
+                "content": content,
+                "handle": handle,
+                "price": price_num,
+                "currency": market["currency"],  # market label for filtering
+            })
+
+        print(f"    {market['currency']} page {page}: {len(nodes)} products fetched")
+        page += 1
+
+        if not page_info["hasNextPage"]:
+            break
+        cursor = page_info["endCursor"]
+        time.sleep(0.3)  # be polite
+
+    return products
+
+
+def scrape_products():
+    seen_keys = set()
+    all_products = []
+    print("\n📦 Fetching products via Storefront API (real per-market prices)...")
+
+    for market in MARKETS:
+        print(f"\n  [{market['currency']}] country={market['country']}")
+        try:
+            products = storefront_fetch_all_products(market)
+            # Deduplicate by handle+currency
+            for p in products:
+                key = f"{p['handle']}_{p['currency']}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_products.append(p)
+            print(f"  ✅ {market['currency']}: {len(products)} products")
+        except Exception as e:
+            print(f"  ✗ {market['currency']} failed: {e}")
+
+    print(f"\n  ✅ Total: {len(all_products)} product-market entries")
+    return all_products
 
 
 def get_text(soup):
@@ -66,146 +200,34 @@ def get_text(soup):
     return " ".join(soup.get_text(separator=" ").split())
 
 
-def is_watch_product(p):
-    """Filter out non-watch products like boxes, tools, accessories."""
-    title = (p.get("title") or "").lower()
-    product_type = (p.get("product_type") or "").lower()
-    tags = " ".join(p.get("tags") or []).lower()
-    # Exclude watch boxes, storage, straps-only, tools
-    exclude_keywords = ["box", "watch box", "storage", "case box", "packaging", "gift box"]
-    for kw in exclude_keywords:
-        if kw in title or kw in product_type:
-            return False
-    return True
-
-
-def format_product(p, base_url, market):
-    title = p.get("title", "")
-    vendor = p.get("vendor", "")
-    product_type = p.get("product_type", "")
-    handle = p.get("handle", "")
-    body = BeautifulSoup(p.get("body_html", "") or "", "html.parser").get_text()
-    tags = ", ".join(p.get("tags", []))
-    variants = p.get("variants", [])
-    price_str = variants[0].get("price", "0") if variants else "0"
-    try:
-        price_num = float(price_str)
-    except:
-        price_num = 0
-    currency = market["currency"]
-    symbol = market["symbol"]
-    product_url = f"{base_url}/products/{handle}"
-    content = (
-        f"Product: {title}\n"
-        f"Brand/Vendor: {vendor}\n"
-        f"Type: {product_type}\n"
-        f"Price: {symbol}{price_str} {currency}\n"
-        f"URL: {product_url}\n"
-        f"Tags: {tags}\n"
-        f"Description: {body[:300]}"
-    )
-    return {
-        "url": product_url,
-        "title": title,
-        "content": content,
-        "handle": handle,
-        "price": price_num,
-        "currency": currency,
-    }
-
-
-def fetch_collection(base_url, handle, market, seen_keys):
-    products = []
-    page = 1
-    params = {"limit": 250, "country": market["country"], "currency": market["currency"]}
-    if handle == "all":
-        api_url = f"{base_url}/products.json"
-    else:
-        api_url = f"{base_url}/collections/{handle}/products.json"
-
-    while page <= 15:
-        try:
-            resp = requests.get(api_url, headers=BASE_HEADERS,
-                                params={**params, "page": page}, timeout=15)
-            if resp.status_code != 200:
-                break
-            batch = resp.json().get("products", [])
-            if not batch:
-                break
-            new = 0
-            for p in batch:
-                h = p.get("handle")
-                key = f"{h}_{market['currency']}"
-                if h and key not in seen_keys and is_watch_product(p):
-                    seen_keys.add(key)
-                    products.append(format_product(p, base_url, market))
-                    new += 1
-            if new:
-                print(f"    {market['currency']} /{handle} p{page}: {new} products")
-            if len(batch) < 250:
-                break
-            page += 1
-        except Exception as e:
-            print(f"    ✗ {market['currency']} /{handle}: {e}")
-            break
-    return products
-
-
-def scrape_products(base_url):
-    seen_keys = set()
-    all_products = []
-    print("\n📦 Fetching products across all 5 markets...")
-    for market in MARKETS:
-        print(f"\n  [{market['currency']}]")
-        # First hit /products.json for full catalog in this market
-        found = fetch_collection(base_url, "all", market, seen_keys)
-        all_products.extend(found)
-        # Then brand collections for anything missed
-        for handle in WATCH_COLLECTIONS:
-            found = fetch_collection(base_url, handle, market, seen_keys)
-            all_products.extend(found)
-    print(f"\n  ✅ {len(all_products)} product-market entries")
-    return all_products
-
-
-def scrape_articles(base_url):
+def scrape_articles():
     articles = []
     seen_urls = set()
     print("\n📰 Fetching articles...")
 
     BLOG_INFO = {
-        "watch_enthusiast": {
-            "label": "Community Article (Watch Enthusiast)",
-            "url_handle": "watch-enthusiast",   # hyphen for public URL
-        },
-        "press": {
-            "label": "Press Release",
-            "url_handle": "press",
-        },
+        "watch_enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
+        "press":            {"label": "Press Release", "url_handle": "press"},
     }
 
     for blog_handle in BLOG_HANDLES:
         info = BLOG_INFO[blog_handle]
-        blog_page_url = f"{base_url}/blogs/{info['url_handle']}"
+        blog_page_url = f"{BASE_URL}/blogs/{info['url_handle']}"
         page = 1
         while page <= 15:
             try:
-                # API uses underscore handle
-                api_url = f"{base_url}/blogs/{blog_handle}.json?limit=50&page={page}"
+                api_url = f"{BASE_URL}/blogs/{blog_handle}.json?limit=50&page={page}"
                 resp = requests.get(api_url, headers=BASE_HEADERS, timeout=12)
                 if resp.status_code != 200:
-                    print(f"  ✗ {blog_handle} HTTP {resp.status_code}")
                     break
                 posts = resp.json().get("articles", [])
                 if not posts:
                     break
                 for post in posts:
-                    title = post.get("title", "")
                     handle = post.get("handle", "")
                     if not handle:
                         continue
-                    # Public URL uses hyphen handle
-                    article_url = f"{base_url}/blogs/{info['url_handle']}/{handle}"
+                    article_url = f"{BASE_URL}/blogs/{info['url_handle']}/{handle}"
                     if article_url in seen_urls:
                         continue
                     seen_urls.add(article_url)
@@ -214,7 +236,7 @@ def scrape_articles(base_url):
                     author = post.get("author", "")
                     content = (
                         f"Article Type: {info['label']}\n"
-                        f"Article: {title}\n"
+                        f"Article: {post.get('title', '')}\n"
                         f"Published: {published}\n"
                         f"Author: {author}\n"
                         f"URL: {article_url}\n"
@@ -223,7 +245,7 @@ def scrape_articles(base_url):
                     )
                     articles.append({
                         "url": article_url,
-                        "title": title,
+                        "title": post.get("title", ""),
                         "content": content,
                         "published": published,
                         "blog": blog_handle,
@@ -237,18 +259,18 @@ def scrape_articles(base_url):
                 break
 
     articles.sort(key=lambda x: x.get("published", ""), reverse=True)
-    print(f"  ✅ {len(articles)} articles (newest first)")
+    print(f"  ✅ {len(articles)} articles")
     return articles
 
 
-def scrape_site(base_url):
+def scrape_site():
     visited = set()
-    domain = urlparse(base_url).netloc
-    to_visit = [base_url + p for p in PRIORITY_PATHS]
+    domain = urlparse(BASE_URL).netloc
+    to_visit = [BASE_URL + p for p in PRIORITY_PATHS]
     pages = []
     print("\n🌐 Scraping site pages...")
     while to_visit and len(visited) < MAX_SITE_PAGES:
-        url = to_visit.pop(0).split("#")[0].split("?")[0].rstrip("/") or base_url
+        url = to_visit.pop(0).split("#")[0].split("?")[0].rstrip("/") or BASE_URL
         if url in visited:
             continue
         visited.add(url)
@@ -263,7 +285,7 @@ def scrape_site(base_url):
                 pages.append({"url": url, "title": title, "content": text[:3500]})
                 print(f"  ✓ [{len(pages)}] {title[:60]}")
             for a in soup.find_all("a", href=True):
-                href = urljoin(base_url, a["href"]).split("#")[0].split("?")[0]
+                href = urljoin(BASE_URL, a["href"]).split("#")[0].split("?")[0]
                 if urlparse(href).netloc == domain and href not in visited and href not in to_visit:
                     to_visit.append(href)
         except Exception as e:
@@ -273,9 +295,9 @@ def scrape_site(base_url):
 
 def main():
     print(f"WatchDNA Scraper — {datetime.now(timezone.utc).isoformat()}")
-    products = scrape_products(BASE_URL)
-    articles = scrape_articles(BASE_URL)
-    pages = scrape_site(BASE_URL)
+    products = scrape_products()
+    articles = scrape_articles()
+    pages = scrape_site()
 
     all_entries = products + articles + pages
     print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
