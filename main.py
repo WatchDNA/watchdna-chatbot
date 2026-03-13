@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
-import json, os, re, csv, io, urllib.request
+import json, os, re, csv, io, urllib.request, random
 from pathlib import Path
 
 app = FastAPI()
@@ -19,6 +19,14 @@ _brand_map_cache = None
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
 
+# Product types that are accessories — never recommend as watches
+ACCESSORY_TYPES = {
+    "watch winder", "watch roll", "watch case", "safe", "accessories", "accessory",
+    "strap", "bracelet", "desk organizer", "desk organiser", "watch box",
+    "legion safes", "watch certificate", "8 piece watch winder", "16 piece watch winder",
+    "6 piece watch winder", "double watch winder", "quad watch winder",
+}
+
 
 def get_knowledge_base():
     global _kb_cache
@@ -28,14 +36,14 @@ def get_knowledge_base():
         try:
             with open(KNOWLEDGE_FILE) as f:
                 _kb_cache = json.load(f)
-            print(f"KB loaded: {_kb_cache.get('product_count',0)} products")
+            print(f"KB loaded: {_kb_cache.get('product_count', 0)} products")
             return _kb_cache
         except Exception as e:
             print(f"Local KB error: {e}")
     try:
         with urllib.request.urlopen(GITHUB_KB_URL, timeout=20) as r:
             _kb_cache = json.loads(r.read().decode())
-        print(f"GitHub KB loaded: {_kb_cache.get('product_count',0)} products")
+        print(f"GitHub KB loaded: {_kb_cache.get('product_count', 0)} products")
         return _kb_cache
     except Exception as e:
         print(f"GitHub KB error: {e}")
@@ -46,12 +54,13 @@ def get_most_expensive(currency: str):
     data = get_knowledge_base()
     if not data:
         return None
-    best = None
-    best_price = 0
+    best, best_price = None, 0
     for page in data.get("pages", []):
         if "/products/" not in page.get("url", ""):
             continue
         if page.get("currency", "") != currency:
+            continue
+        if _is_accessory(page):
             continue
         price = page.get("price", 0)
         if price > best_price:
@@ -113,6 +122,18 @@ def extract_budget(query: str):
     return None
 
 
+def _is_accessory(page: dict) -> bool:
+    """Return True if this product is an accessory rather than a watch."""
+    for line in page.get("content", "").split("\n"):
+        if line.startswith("Type:"):
+            t = line.replace("Type:", "").strip().lower()
+            if t in ACCESSORY_TYPES:
+                return True
+            if t == "watches":
+                return False
+    return False
+
+
 def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     data = get_knowledge_base()
     if not data:
@@ -121,42 +142,74 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     currency = currency.upper()
     budget = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
+    query_lower = query.lower()
 
-    filtered = []
+    watches = []
+    accessories = []
+    articles = []
+    other_pages = []
+
     for page in data.get("pages", []):
-        is_product = "/products/" in page.get("url", "")
+        url = page.get("url", "")
+        is_product = "/products/" in url
+        is_article = "/blogs/" in url
+
         if is_product:
-            # Exact match on currency field — only show products in the user's market
+            # Strict currency match — never mix markets
             if page.get("currency", "") != currency:
                 continue
-            # Filter by budget
+            # Skip zero-price — not sold in this market
+            if page.get("price", 0) == 0:
+                continue
+            # Skip over budget
             if budget and page.get("price", 0) > budget:
                 continue
-        filtered.append(page)
+            if _is_accessory(page):
+                accessories.append(page)
+            else:
+                watches.append(page)
+        elif is_article:
+            articles.append(page)
+        else:
+            other_pages.append(page)
+
+    print(f"[LOAD_KNOWLEDGE] currency={currency} | watches={len(watches)} | accessories={len(accessories)} | articles={len(articles)}")
 
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
 
-    if keywords:
-        scored = sorted(filtered, key=score, reverse=True)
-        relevant = scored[:30]
-        general = [p for p in filtered if p not in relevant][:10]
-        ordered = relevant + general
-    else:
-        ordered = filtered
+    is_accessory_query = any(w in query_lower for w in [
+        "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
+    ])
+    is_article_query = any(w in query_lower for w in [
+        "article", "blog", "press", "news", "latest", "recent", "story", "post", "read"
+    ])
 
-    # Debug: confirm how many products made it through the currency filter
-    product_pages = [p for p in filtered if "/products/" in p.get("url", "")]
-    print(f"[LOAD_KNOWLEDGE] currency={currency} | products after filter={len(product_pages)} | total pages={len(filtered)}")
+    if is_accessory_query:
+        pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
+    elif is_article_query:
+        pool = articles + other_pages + sorted(watches, key=score, reverse=True)[:5]
+    else:
+        # Watch recommendations — shuffle for variety, keyword matches float to top
+        if keywords:
+            top = [w for w in sorted(watches, key=score, reverse=True) if score(w) > 0]
+            rest = [w for w in watches if score(w) == 0]
+            random.shuffle(rest)
+            pool = top + rest + other_pages + articles
+        else:
+            shuffled = watches[:]
+            random.shuffle(shuffled)
+            pool = shuffled + other_pages + articles
 
     context = ""
-    for page in ordered:
+    for page in pool:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
         if len(context) + len(entry) > 22000:
             break
         context += entry
     return context
+
 
 SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a global directory and community for watch lovers.
 
@@ -176,11 +229,16 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 - Format: [Product Name](url) — {symbol}X.XX {currency}
 - Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
-WATCH RECOMMENDATION FLOW — CRITICAL:
+=== WATCH RECOMMENDATIONS — STRICT RULES ===
 - If the user asks for watch recommendations and has NOT specified a currency in this conversation, ALWAYS ask first:
   "Which market would you like recommendations in? 🌍 CAD, USD, GBP, CHF, or EUR?"
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
-- NEVER recommend watches from a different currency than what was asked — the same watch has different entries per market and only the correct one will work.
+- NEVER recommend watches from a different currency than what was asked.
+- ONLY recommend products with a /products/ URL from WEBSITE CONTENT — these are the only real store listings.
+- NEVER recommend watches mentioned only in blog articles or press releases — those are editorial content, not store listings.
+- When asked for accessories (winders, straps, safes), only recommend /products/ accessories — never watches.
+- NEVER mix accessories into watch recommendation responses.
+- Each time you give recommendations, vary your selections across different brands, price points, and styles.
 
 === BRAND QUESTIONS ===
 - Use BOTH site content AND your general watch knowledge for brand history, founders, country of origin.
@@ -199,7 +257,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Format: [Name](url) — one line each.
 
 === STORE LOCATOR ===
-- give them the link to the store locater https://watchdna.com/tools/storelocator.
+- Give them the link: https://watchdna.com/tools/storelocator
 
 KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
@@ -224,76 +282,44 @@ class ChatRequest(BaseModel):
 
 
 def detect_currency_in_text(text: str) -> str | None:
-    """
-    Detect currency from text. Handles both codes (USD, GBP) and
-    natural language words (dollars, pounds, euros, francs, swiss).
-    """
     text_upper = text.upper()
-
-    # 1. Match currency codes (USD, CAD, GBP, CHF, EUR)
     for cur in VALID_CURRENCIES:
         if re.search(r"\b" + cur + r"\b", text_upper):
             return cur
-
-    # 2. Match natural language currency words
     word_map = [
-        (r"\bEUROS?\b",             "EUR"),
+        (r"\bEUROS?\b",               "EUR"),
         (r"\bPOUNDS?\b|\bSTERLING\b", "GBP"),
         (r"\bSWISS\b|\bFRANCS?\b",    "CHF"),
-        # "dollars" is ambiguous (CAD vs USD) so we skip it
     ]
     for pattern, cur in word_map:
         if re.search(pattern, text_upper):
             return cur
-
     return None
 
 
 def resolve_currency(req: "ChatRequest") -> str:
-    """
-    Priority:
-      1. Current user message
-      2. Most recent USER turn in history (newest first) — skips assistant turns
-      3. Fallback to CAD
-
-    Intentionally ignores req.currency (Shopify widget) because it always
-    sends the store default (CAD) and overrides what the user said in chat.
-    """
-    # 1. Current message
     found = detect_currency_in_text(req.message)
     if found:
-        print(f"[CURRENCY] From current message: {found}")
         return found
-
-    # 2. Most recent USER turn in history
     for h in reversed(req.history):
         if h.get("role") != "user":
             continue
         found = detect_currency_in_text(h.get("content", ""))
         if found:
-            print(f"[CURRENCY] From history user turn: {found}")
             return found
-
-    # 3. Shopify widget — reflects which market the user is browsing
     widget = req.currency.upper().strip()
     if widget in VALID_CURRENCIES:
-        print(f"[CURRENCY] From Shopify widget: {widget}")
         return widget
-
-    # 4. Fallback
-    print("[CURRENCY] Defaulting to CAD")
     return "CAD"
 
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
     currency = resolve_currency(req)
-    print(f"[CURRENCY DETECTED] {currency} | message: {req.message[:60]}")
+    print(f"[CURRENCY] {currency} | {req.message[:60]}")
 
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
-    # load_knowledge filters pages by page["currency"] == currency exactly
     knowledge = load_knowledge(req.message, currency=currency)
-    print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     brand_map = get_brand_map()
     store_links = "\n".join([
@@ -301,7 +327,6 @@ async def chat(req: ChatRequest):
         for k, v in brand_map.items() if k == v["name"].lower()
     ])
 
-    # Store locator hints
     history_text = " ".join([h.get("content", "") for h in req.history[-6:]])
     brand_match = find_brand_in_query(req.message) or find_brand_in_query(history_text)
     is_store_query = any(w in req.message.lower() for w in [
@@ -322,7 +347,6 @@ async def chat(req: ChatRequest):
         else:
             store_hint = "\n\nNOTE: Ask user which brand they're looking for."
 
-    # Most expensive — computed in backend, not guessed by AI
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
         best = get_most_expensive(currency)
@@ -357,17 +381,16 @@ async def chat(req: ChatRequest):
 
 @app.post("/debug-currency")
 async def debug_currency(req: ChatRequest):
-    """Test endpoint — call this to see exactly what currency is resolved and how many products load."""
     currency = resolve_currency(req)
     data = get_knowledge_base()
     all_products = [p for p in data.get("pages", []) if "/products/" in p.get("url", "")]
-    matching = [p for p in all_products if p.get("currency", "") == currency]
+    matching = [p for p in all_products if p.get("currency", "") == currency and not _is_accessory(p)]
     currencies_in_kb = list(set(p.get("currency", "MISSING") for p in all_products))
     return {
         "resolved_currency": currency,
         "req_currency_field": req.currency,
         "message_scanned": req.message,
-        "products_in_kb_for_currency": len(matching),
+        "watches_for_currency": len(matching),
         "all_currencies_in_kb": sorted(currencies_in_kb),
         "sample_products": [
             {"title": p["title"], "price": p["price"], "currency": p["currency"]}
@@ -380,7 +403,10 @@ async def debug_currency(req: ChatRequest):
 async def health():
     kb_exists = Path(KNOWLEDGE_FILE).exists()
     last_scraped = None
+    product_count = 0
     if kb_exists:
         with open(KNOWLEDGE_FILE) as f:
-            last_scraped = json.load(f).get("scraped_at")
-    return {"status": "ok", "knowledge_base": kb_exists, "last_scraped": last_scraped}
+            kb = json.load(f)
+            last_scraped = kb.get("scraped_at")
+            product_count = kb.get("product_count", 0)
+    return {"status": "ok", "knowledge_base": kb_exists, "last_scraped": last_scraped, "product_count": product_count}
