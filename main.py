@@ -199,9 +199,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Format: [Name](url) — one line each.
 
 === STORE LOCATOR ===
-- Step 1: No brand → "Which brand are you looking for?"
-- Step 2: Brand, no location → "What's your postal code or city?"
-- Step 3: Both → give filtered link from STORE LOCATOR LINKS, tell them to type postal code in the map search bar.
+- give them the link to the store locater https://watchdna.com/tools/storelocator.
 
 KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
