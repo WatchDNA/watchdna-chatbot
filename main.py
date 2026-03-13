@@ -119,6 +119,29 @@ def get_most_expensive(currency: str):
     return best
 
 
+def get_brand_history_links() -> str:
+    """Build a brand-name -> /blogs/history/ URL map from KB, for system prompt injection."""
+    data = get_knowledge_base()
+    if not data:
+        return ""
+    lines = []
+    for page in data.get("pages", []):
+        url = page.get("url", "")
+        if "/blogs/history/" not in url:
+            continue
+        # Extract brand name from first non-empty content line
+        title = page.get("title", "")
+        if not title:
+            for line in page.get("content", "").split("\n"):
+                line = line.strip()
+                if line and "WatchDNA" not in line and "Skip to content" not in line and len(line) > 2:
+                    title = line
+                    break
+        if title:
+            lines.append(f"- [{title}]({url})")
+    return "\n".join(lines)
+
+
 def get_brand_map():
     global _brand_map_cache
     if _brand_map_cache:
@@ -285,10 +308,15 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 - Each time you give recommendations, vary your selections across different brands, price points, and styles.
 
 === BRANDS ===
-- When asked about brands, ONLY talk about brands that appear on WatchDNA at https://watchdna.com/pages/brands-dna
-- For every brand mentioned, always link to: [Brand Name](https://watchdna.com/pages/brands-dna#brand-name)
-- Do NOT mention brands like Rolex, Patek Philippe, Omega, TAG Heuer, Seiko etc. unless they are in the WEBSITE CONTENT — WatchDNA only carries specific brands.
+- When asked about brands, ONLY talk about brands that appear on WatchDNA.
+- For every brand mentioned, link directly to its WatchDNA page using BRAND LINKS below.
+- If a brand has a /blogs/history/ page listed in BRAND LINKS, ALWAYS use that specific URL.
+- If a brand has no /blogs/history/ page, link to https://watchdna.com/pages/brands-dna instead.
+- Do NOT mention brands like Rolex, Patek Philippe, Omega, TAG Heuer, Seiko etc. unless they appear in BRAND LINKS or WEBSITE CONTENT.
 - If asked about a brand not on WatchDNA, say it's not currently carried and suggest browsing https://watchdna.com/pages/brands-dna
+
+BRAND LINKS:
+{brand_links}
 
 === CONTRIBUTORS ===
 - Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
@@ -414,12 +442,15 @@ async def chat(req: ChatRequest):
                 f"URL: {best['url']}. Use this exact data."
             )
 
+    brand_links = get_brand_history_links()
+
     system = SYSTEM_PROMPT.format(
         currency=currency,
         symbol=symbol,
         contributors=CONTRIBUTORS,
         tradeshows=TRADESHOWS,
         store_links=store_links,
+        brand_links=brand_links,
         knowledge=knowledge + store_hint + expensive_hint,
     )
 
