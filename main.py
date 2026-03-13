@@ -296,10 +296,8 @@ async def chat(req: ChatRequest):
     reply = response.choices[0].message.content
 
     # Strip ALL bold/underline junk formatting
-    reply = re.sub(r"[*]{1,2}[_]{0,2}([^*_
-]+)[_]{0,2}[*]{0,2}", r"\1", reply)
-    reply = re.sub(r"[_]{1,2}([^_
-]+)[_]{1,2}", r"\1", reply)
+    reply = re.sub(r'[*]{1,2}[_]{0,2}([^*_\n]+)[_]{0,2}[*]{0,2}', r'\1', reply)
+    reply = re.sub(r'[_]{1,2}([^_\n]+)[_]{1,2}', r'\1', reply)
 
     # Auto-link product titles to their real URLs from knowledge base
     kb = get_knowledge_base()
