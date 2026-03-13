@@ -40,7 +40,7 @@ Format every contributor as: [Full Name](their-url) — Role/bio
 - [David Carrington](https://watchdna.com/pages/david-carrington) — Founder and CEO of COMPASS Timepieces.
 - [Elizabeth Ionson](https://watchdna.com/pages/elizabeth-ionson) — Sales & Training Professional.
 - [George Sully](https://watchdna.com/pages/george-sully) — Watch Enthusiast & Entrepreneur.
-- [Gian-Paolo Mazzotta](https://watchdna.com/pages/gian-paolo-mazzotta) — Tailor, Designer, Stylist & Watch Enthusiast.
+- [Gian-Paolo Mazzotta](https://watchdna.com/pages/gianpaolo-mazzotta) — Tailor, Designer, Stylist & Watch Enthusiast.
 - [Grigor Garabedian](https://watchdna.com/pages/grigor-garabedian) — Head Watchmaker & Director of Service Operations, Fine Jewellery and Timepieces at Birks Group.
 - [Hakim El Kadiri](https://watchdna.com/pages/hakim-el-kadiri) — Founder of ELKA Watch Co.
 - [Ian Cognito](https://watchdna.com/pages/ian-cognito) (@IAN_COGNITO) — Watch Enthusiast.
