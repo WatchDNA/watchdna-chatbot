@@ -76,7 +76,6 @@ query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $
       vendor
       productType
       tags
-      availableForSale
       description(truncateAt: 300)
       priceRange {
         minVariantPrice {
@@ -133,10 +132,6 @@ def storefront_fetch_all_products(market):
             symbol = market["symbol"]
             handle = node["handle"]
             product_url = f"{BASE_URL}/products/{handle}"
-
-            # Skip products not available for sale in this market
-            if not node.get("availableForSale", True):
-                continue
 
             # Skip non-watch products
             title_lower = node["title"].lower()
