@@ -113,6 +113,15 @@ def extract_budget(query: str):
     return None
 
 
+ARTICLE_QUERY_WORDS = [
+    "article", "articles", "latest", "recent", "newest", "blog", "press", "release",
+    "story", "stories", "post", "posts", "read", "written", "published", "news"
+]
+
+def is_article_query(query: str) -> bool:
+    return any(w in query.lower() for w in ARTICLE_QUERY_WORDS)
+
+
 def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     data = get_knowledge_base()
     if not data:
@@ -122,33 +131,50 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     budget = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
 
-    filtered = []
+    articles = []
+    non_articles = []
+
     for page in data.get("pages", []):
-        is_product = "/products/" in page.get("url", "")
+        url = page.get("url", "")
+        is_product = "/products/" in url
+        is_article = "/blogs/" in url
+
         if is_product:
-            # Exact match on currency field — only show products in the user's market
             if page.get("currency", "") != currency:
                 continue
-            # Filter by budget
             if budget and page.get("price", 0) > budget:
                 continue
-        filtered.append(page)
+
+        if is_article:
+            articles.append(page)
+        else:
+            non_articles.append(page)
+
+    # Always sort articles newest-first so the AI sees the latest ones
+    articles.sort(key=lambda p: p.get("published", ""), reverse=True)
+
+    product_pages = [p for p in non_articles if "/products/" in p.get("url", "")]
+    print(f"[LOAD_KNOWLEDGE] currency={currency} | products={len(product_pages)} | articles={len(articles)}")
 
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
 
-    if keywords:
-        scored = sorted(filtered, key=score, reverse=True)
-        relevant = scored[:30]
-        general = [p for p in filtered if p not in relevant][:10]
-        ordered = relevant + general
+    if is_article_query(query):
+        # Article queries: articles at the top, sorted newest-first (or by relevance if keywords match)
+        if keywords:
+            scored_articles = sorted(articles, key=score, reverse=True)
+        else:
+            scored_articles = articles  # already newest-first
+        scored_non = sorted(non_articles, key=score, reverse=True)[:20]
+        ordered = scored_articles + scored_non
+    elif keywords:
+        all_pages = articles + non_articles
+        scored = sorted(all_pages, key=score, reverse=True)
+        ordered = scored[:40]
     else:
-        ordered = filtered
-
-    # Debug: confirm how many products made it through the currency filter
-    product_pages = [p for p in filtered if "/products/" in p.get("url", "")]
-    print(f"[LOAD_KNOWLEDGE] currency={currency} | products after filter={len(product_pages)} | total pages={len(filtered)}")
+        # Default: articles newest-first, then everything else
+        ordered = articles + non_articles
 
     context = ""
     for page in ordered:
