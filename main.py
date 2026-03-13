@@ -146,6 +146,10 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     else:
         ordered = filtered
 
+    # Debug: confirm how many products made it through the currency filter
+    product_pages = [p for p in filtered if "/products/" in p.get("url", "")]
+    print(f"[LOAD_KNOWLEDGE] currency={currency} | products after filter={len(product_pages)} | total pages={len(filtered)}")
+
     context = ""
     for page in ordered:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
