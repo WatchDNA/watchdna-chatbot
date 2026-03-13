@@ -221,35 +221,64 @@ class ChatRequest(BaseModel):
     currency: str = "CAD"
 
 
+def detect_currency_in_text(text: str) -> str | None:
+    """
+    Robustly detect a currency code in a piece of text.
+    Uses word-boundary matching so 'usd' inside 'used' doesn't trigger USD.
+    Returns the matched currency code (uppercase) or None.
+    """
+    text_upper = text.upper()
+    # Word-boundary pattern: currency must be surrounded by non-alpha characters
+    for cur in VALID_CURRENCIES:
+        if re.search(r'(?<![A-Z])' + cur + r'(?![A-Z])', text_upper):
+            return cur
+    return None
+
+
+def resolve_currency(req: "ChatRequest") -> str:
+    """
+    Determine the correct currency for this request using a clear priority chain:
+      1. Current user message (most authoritative — user just said it)
+      2. Most recent USER turn in history that contains a currency (newest first)
+         — only USER turns, never assistant turns which frequently echo currency names
+      3. Widget-reported currency from Shopify (req.currency)
+      4. Final fallback: CAD
+    """
+    # 1. Current message
+    found = detect_currency_in_text(req.message)
+    if found:
+        print(f"[CURRENCY] Found in current message: {found}")
+        return found
+
+    # 2. Scan only USER turns in history, newest first
+    for h in reversed(req.history[-20:]):
+        if h.get("role") != "user":
+            continue
+        found = detect_currency_in_text(h.get("content", ""))
+        if found:
+            print(f"[CURRENCY] Found in history (user turn): {found}")
+            return found
+
+    # 3. Widget / Shopify reported currency
+    widget_currency = req.currency.upper()
+    if widget_currency in VALID_CURRENCIES:
+        print(f"[CURRENCY] Using widget currency: {widget_currency}")
+        return widget_currency
+
+    # 4. Fallback
+    print("[CURRENCY] Falling back to CAD")
+    return "CAD"
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    # Determine currency from user messages only (not bot responses)
-    # Check current message first
-    currency = None
-    msg_lower = req.message.lower().strip()
-    for cur in VALID_CURRENCIES:
-        if cur.lower() == msg_lower or f" {cur.lower()} " in f" {msg_lower} ":
-            currency = cur
-            break
-
-    # Check user messages in history (role=user only, not assistant)
-    if not currency:
-        for h in reversed(req.history[-10:]):
-            if h.get("role") == "user":
-                h_lower = h.get("content", "").lower().strip()
-                for cur in VALID_CURRENCIES:
-                    if cur.lower() == h_lower or f" {cur.lower()} " in f" {h_lower} ":
-                        currency = cur
-                        break
-            if currency:
-                break
-
-    # Fall back to widget currency, then CAD
-    if not currency:
-        currency = req.currency.upper() if req.currency.upper() in VALID_CURRENCIES else "CAD"
+    currency = resolve_currency(req)
+    print(f"[CURRENCY DETECTED] {currency} | message: {req.message[:60]}")
 
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
+    # load_knowledge filters pages by page["currency"] == currency exactly
     knowledge = load_knowledge(req.message, currency=currency)
+    print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     brand_map = get_brand_map()
     store_links = "\n".join([
