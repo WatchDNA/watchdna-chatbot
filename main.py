@@ -226,11 +226,28 @@ class ChatRequest(BaseModel):
 
 
 def detect_currency_in_text(text: str) -> str | None:
-    """Detect a standalone currency code using word boundaries."""
+    """
+    Detect currency from text. Handles both codes (USD, GBP) and
+    natural language words (dollars, pounds, euros, francs, swiss).
+    """
     text_upper = text.upper()
+
+    # 1. Match currency codes (USD, CAD, GBP, CHF, EUR)
     for cur in VALID_CURRENCIES:
         if re.search(r"\b" + cur + r"\b", text_upper):
             return cur
+
+    # 2. Match natural language currency words
+    word_map = [
+        (r"\bEUROS?\b",             "EUR"),
+        (r"\bPOUNDS?\b|\bSTERLING\b", "GBP"),
+        (r"\bSWISS\b|\bFRANCS?\b",    "CHF"),
+        # "dollars" is ambiguous (CAD vs USD) so we skip it
+    ]
+    for pattern, cur in word_map:
+        if re.search(pattern, text_upper):
+            return cur
+
     return None
 
 
@@ -259,8 +276,14 @@ def resolve_currency(req: "ChatRequest") -> str:
             print(f"[CURRENCY] From history user turn: {found}")
             return found
 
-    # 3. Fallback
-    print("[CURRENCY] No currency in conversation, defaulting to CAD")
+    # 3. Shopify widget — reflects which market the user is browsing
+    widget = req.currency.upper().strip()
+    if widget in VALID_CURRENCIES:
+        print(f"[CURRENCY] From Shopify widget: {widget}")
+        return widget
+
+    # 4. Fallback
+    print("[CURRENCY] Defaulting to CAD")
     return "CAD"
 
 
