@@ -106,6 +106,28 @@ def find_brand_in_query(query: str) -> dict:
     return None
 
 
+def extract_budget(query: str):
+    """Extract a maximum budget from the query in CAD."""
+    import re
+    # Match patterns like $1000, 1000 CAD, 1000 dollars, under 1000, budget 1000
+    patterns = [
+        r"under\s*\$?([\d,]+)",
+        r"below\s*\$?([\d,]+)",
+        r"less than\s*\$?([\d,]+)",
+        r"\$?([\d,]+)\s*(?:cad|usd|dollars|budget|or less|max|maximum)",
+        r"budget\s*(?:of|is|:)?\s*\$?([\d,]+)",
+        r"\$?([\d,]+)\s*(?:cad)?$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, query.lower())
+        if match:
+            try:
+                return float(match.group(1).replace(",", ""))
+            except:
+                pass
+    return None
+
+
 def load_knowledge(query: str = "") -> str:
     data = get_knowledge_base()
     if not data:
@@ -114,6 +136,26 @@ def load_knowledge(query: str = "") -> str:
     pages = data.get("pages", [])
     query_lower = query.lower()
     keywords = [w for w in query_lower.split() if len(w) > 2]
+    budget = extract_budget(query)
+
+    # If budget specified, filter products to only those within budget
+    if budget:
+        import re
+        filtered_pages = []
+        for page in pages:
+            if "/products/" in page.get("url", ""):
+                # Extract price from content
+                price_match = re.search(r"Price: \$?([\d,]+\.?\d*)", page.get("content", ""))
+                if price_match:
+                    try:
+                        price = float(price_match.group(1).replace(",", ""))
+                        if price <= budget:
+                            filtered_pages.append(page)
+                    except:
+                        pass
+            else:
+                filtered_pages.append(page)
+        pages = filtered_pages
 
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
@@ -153,21 +195,26 @@ LINK RULES — CRITICAL:
 - NEVER use __text__ or **text** formatting instead of a real link.
 - For products: ONLY use the exact URL from the "URL:" field in the website content below. Copy it character for character. NEVER guess or construct a URL.
 - If you cannot find a product's exact URL in the content, show the name as plain text — never make up a URL.
+- For articles: ONLY use the exact URL from the "URL:" field in the article content. Never construct article URLs.
 
 WATCH RECOMMENDATIONS — CRITICAL:
-- ONLY recommend watches that appear in the WATCHDNA WEBSITE CONTENT below.
-- A watch only "appears" if you can see its exact title AND URL in the content.
-- If you cannot find enough watches in the content to answer, say: "Check out our full collection at [WatchDNA Timepieces](https://watchdna.com/collections/watches)"
-- NEVER mention a watch you cannot find in the content below. Not even as an example.
+- ONLY recommend watches that appear in the WATCHDNA WEBSITE CONTENT below with an exact URL.
+- If you cannot find enough watches in the content, say: "Check out our full collection at [WatchDNA Timepieces](https://watchdna.com/collections/watches)"
+- NEVER mention a watch not in the content below.
 
-STORE LOCATOR RULES — CRITICAL:
-- When asked about stores for a brand, give the EXACT filtered link from STORE LOCATOR LINKS below.
-- Format it as a clickable link: [Find BRAND Dealers](URL)
-- NEVER say "filter by your area" as the only instruction — always include the direct link.
+STORE LOCATOR CONVERSATION FLOW — CRITICAL:
+- Step 1: If someone asks for a store/dealer without a brand, ask: "Which brand are you looking for?"
+- Step 2: Once you have the brand but no location, ask: "What's your postal code or city so I can point you to the nearest dealers?"
+- Step 3: Once you have BOTH brand AND location, respond like this:
+  - Give them the filtered map link from STORE LOCATOR LINKS for that brand
+  - Tell them the map is pre-filtered for that brand and will show the dealers closest to their location
+  - Format example: "Here are the authorized [BRAND] dealers near [LOCATION]: [Find BRAND Dealers Near You](URL) — the map is already filtered for BRAND, just allow location access or type your postal code in the search bar to see the closest ones to you!"
+- NEVER skip steps — always collect brand AND location before giving the link.
+- Keep the conversation natural and friendly throughout.
 
 SITE-FIRST RULES:
 - Brand/model info: Use site data first, then general knowledge only if site has nothing.
-- Articles/news: Use article content from site data below.
+- Articles/news: Use article content from site data below. Always use the exact article URL.
 
 STRICT TOPIC LIMITS:
 - Only refuse questions CLEARLY unrelated to watches (sports, cooking, movies, politics, coding).
@@ -180,10 +227,10 @@ KEY PAGES:
 - Watchmaking 101: https://watchdna.com/pages/watchmaking101
 - Authorized Dealers: https://watchdna.com/tools/storelocator/directory
 
-STORE LOCATOR LINKS BY BRAND:
+STORE LOCATOR LINKS BY BRAND (use these as fallback if no store data found):
 {store_links}
 
-WATCHDNA WEBSITE CONTENT (use ONLY the URLs and products listed here — do not invent anything):
+WATCHDNA WEBSITE CONTENT (products, articles, stores — use ONLY URLs from here):
 {knowledge}
 """
 
@@ -203,16 +250,32 @@ async def chat(req: ChatRequest):
     store_links = "\n".join([
         f"- {v['name']}: {v['url']}"
         for k, v in brand_map.items()
-        if k == v['name'].lower()  # deduplicate
+        if k == v['name'].lower()
     ])
 
     # Check if user is asking about a specific brand's stores
     brand_match = find_brand_in_query(req.message)
+    # Also check recent history for brand/location mentions
+    history_text = " ".join([h.get("content", "") for h in req.history[-6:]])
+    if not brand_match:
+        brand_match = find_brand_in_query(history_text)
+
     store_hint = ""
-    if brand_match:
-        store_hint = f"\n\nNOTE: User is asking about {brand_match['name']}. Always include this clickable link in your response: [{brand_match['name']} Dealers]({brand_match['url']})"
-        if req.location:
-            store_hint += f" Their location is {req.location}."
+    is_store_query = any(w in req.message.lower() for w in [
+        "store", "dealer", "buy", "near", "where", "find", "location",
+        "authorized", "shop", "retailer", "closest", "nearby", "postal"
+    ]) or any(w in history_text.lower() for w in ["store", "dealer", "find me", "near"])
+
+    if brand_match and is_store_query and req.location:
+        store_hint = (
+            f"\n\nNOTE: User wants {brand_match['name']} dealers near {req.location}. "
+            f"Give them this filtered map link: [{brand_match['name']} Dealers Near You]({brand_match['url']}) "
+            f"and tell them the map is pre-filtered for {brand_match['name']} — they just need to search their postal code on the map."
+        )
+    elif brand_match and is_store_query and not req.location:
+        store_hint = f"\n\nNOTE: User wants {brand_match['name']} dealers but hasn't given a location yet. Ask for their postal code or city."
+    elif is_store_query and not brand_match:
+        store_hint = "\n\nNOTE: User is asking about stores but hasn't specified a brand. Ask which brand they're looking for."
 
     system = SYSTEM_PROMPT.format(
         knowledge=knowledge + store_hint,
@@ -227,14 +290,26 @@ async def chat(req: ChatRequest):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        max_tokens=300,
+        max_tokens=400,
         temperature=0.7,
     )
     reply = response.choices[0].message.content
 
-    # Strip bad formatting the AI uses instead of proper markdown links
-    reply = re.sub(r'[*_]{2,}([^*_]+)[*_]{2,}', r'\1', reply)
-    reply = re.sub(r'__([^_]+)__', r'\1', reply)
+    # Strip ALL bold/underline junk formatting
+    reply = re.sub(r"[*]{1,2}[_]{0,2}([^*_
+]+)[_]{0,2}[*]{0,2}", r"\1", reply)
+    reply = re.sub(r"[_]{1,2}([^_
+]+)[_]{1,2}", r"\1", reply)
+
+    # Auto-link product titles to their real URLs from knowledge base
+    kb = get_knowledge_base()
+    if kb:
+        for page in kb.get("pages", []):
+            url = page.get("url", "")
+            title = page.get("title", "")
+            if "/products/" in url and title and title in reply:
+                if f"]({url})" not in reply:
+                    reply = reply.replace(title, f"[{title}]({url})", 1)
 
     return {"reply": reply}
 
