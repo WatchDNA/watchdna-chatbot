@@ -40,7 +40,7 @@ MARKETS = [
     {"currency": "EUR", "symbol": "€",    "country": "FR"},
 ]
 
-BLOG_HANDLES = ["watch-enthusiast", "press"]
+BLOG_HANDLES = ["watch_enthusiast", "press"]
 
 PRIORITY_PATHS = [
     "/", "/pages/brands-dna", "/pages/our-vision", "/pages/watchmaking",
@@ -76,6 +76,7 @@ query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $
       vendor
       productType
       tags
+      availableForSale
       description(truncateAt: 300)
       priceRange {
         minVariantPrice {
@@ -132,6 +133,10 @@ def storefront_fetch_all_products(market):
             symbol = market["symbol"]
             handle = node["handle"]
             product_url = f"{BASE_URL}/products/{handle}"
+
+            # Skip products not available for sale in this market
+            if not node.get("availableForSale", True):
+                continue
 
             # Skip non-watch products
             title_lower = node["title"].lower()
@@ -206,7 +211,7 @@ def scrape_articles():
     print("\n📰 Fetching articles...")
 
     BLOG_INFO = {
-        "watch-enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
+        "watch_enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
         "press":            {"label": "Press Release", "url_handle": "press"},
     }
 
@@ -216,7 +221,7 @@ def scrape_articles():
         page = 1
         while page <= 15:
             try:
-                api_url = f"{BASE_URL}/blogs/{blog_handle}.json?limit=250&page={page}"
+                api_url = f"{BASE_URL}/blogs/{blog_handle}.json?limit=50&page={page}"
                 resp = requests.get(api_url, headers=BASE_HEADERS, timeout=12)
                 if resp.status_code != 200:
                     break
@@ -238,8 +243,8 @@ def scrape_articles():
                     updated_raw   = post.get("updated_at", "") or ""
                     published = published_raw[:10]
                     updated   = updated_raw[:10]
-                    # Only use updated_at if published_at is clearly a fake bulk-import date
-                    display_date = published if published != updated else updated
+                    # If all articles share the same date it's a fake import date — use updated_at
+                    display_date = updated if published == updated[:10] else published
 
                     author = post.get("author", "") or "WatchDNA"
                     content = (
@@ -331,8 +336,7 @@ def main():
     articles = scrape_articles()
     pages = scrape_site()
 
-    # Articles first so they appear at the top of the knowledge base context
-    all_entries = articles + products + pages
+    all_entries = products + articles + pages
     print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
 
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
