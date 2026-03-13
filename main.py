@@ -2,9 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
-import json, os, re, csv, io, urllib.request, asyncio
-import requests
-from bs4 import BeautifulSoup
+import json, os, re, csv, io, urllib.request, random
 from pathlib import Path
 
 app = FastAPI()
@@ -20,44 +18,6 @@ _kb_cache = None
 _brand_map_cache = None
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
-
-CONTRIBUTORS = """
-WatchDNA Contributors (source: https://watchdna.com/pages/contributors):
-
-- BRENT ROBILLARD (@Calibre321) — Watch Photography and Reviews. Writer, educator, craftsman, and watch enthusiast. Author of four novels.
-- CAGDAS ONEN — Watch Enthusiast & Founder of The Catalyst podcast. YouTube: https://www.youtube.com/c/CagdasONEN
-- CAROL BESLER — Journalist. Written for Forbes, Robb Report, The Globe and Mail, Hodinkee, Patek Philippe Magazine and more. Former editor-in-chief of Canadian Jeweller for 16 years.
-- COLIN POTTS — Horologist & Watch Enthusiast. Founder of luxury watch brand Jakob Eitan and owner of watchoffthecuff.com (Milton, Ontario). Member of the Horology Society of New York.
-- DAVID CARRINGTON — Founder and CEO of COMPASS Timepieces. Began developing the brand with a Swiss team in La Chaux-de-Fonds in 2022. YouTube: https://www.youtube.com/@compasstimepieces/
-- ELIZABETH IONSON — Sales & Training Professional. 25+ years in sales/training; spent 12 years as Canadian Country Manager for TAG Heuer.
-- GEORGE SULLY — Watch Enthusiast & Entrepreneur. Toronto-based designer, CAFA Change-maker Award winner, creator of Black Designers of Canada. https://blackdesignersofcanada.com/
-- GIAN-PAOLO MAZZOTTA — Tailor, Designer, Stylist & Watch Enthusiast. Head tailor at ILLI Bespoke and The Military Tailor; recognized by Sharp Magazine and BlogTO as one of Toronto's best bespoke tailors.
-- GRIGOR GARABEDIAN — Head Watchmaker & National Director of Service Operations at Birks Group Inc.
-- HAKIM EL KADIRI — Founder of ELKA Watch Co. 25+ years in the watch industry; brand inspired by a defunct Dutch watch brand from the 1960s-70s.
-- @IAN_COGNITO — Watch Enthusiast. Instagram watch community member since 2015; has worked with Hamilton, Oris, and Citizen.
-- JACKY HO — Watchmaker & Artist. Background in textile engineering and fashion design; writes for WatchDNA on unconventional watch design.
-- JEREMY FREED — Journalist based in Halifax, Nova Scotia. Writes for Sharp, The Globe & Mail, GQ.com, and Hodinkee.
-- MARK FLEMINGER — Watch Enthusiast & RedBar Toronto Chapter Head. Collects IWC, Omega, Vintage Longines, Tissot, and Nivada.
-- MIKHAIL GOMES — Strategist (Marketing, PR & Content). 8+ years experience, 175+ global brands, former Content & Influencer Marketing Strategist at Kapoor Watch Company.
-- NABIL AMDAN — Watch Enthusiast. Editor at Chrono Chronicles and Hairspring; focuses on luxury independent watchmaking and horology history.
-- PHILLIP PLIMMER — Professional Product/Industrial Designer specializing in Watch Design. 20+ years, 200+ brands across 20+ countries. Graduate of the Royal College of Art, London.
-- ROBERTA NAAS — Journalist, Author, Founder of ATimelyPerspective.com. First female watch journalist in America; pioneer in the watch world since 1984. Wikipedia: https://en.wikipedia.org/wiki/Roberta_Naas/
-- SANKET PATEL — Watch Enthusiast & content creator. Runs The Indian Watch Reviewer on YouTube and TikTok (@theindianwatchreviewer).
-- SEAN SHAPIRO (@VOICEOVERCOP) — Watch Enthusiast, Public Speaker, Podcaster. 24-year law enforcement veteran; 673K+ TikTok followers.
-- SMARTWATCH DICK — Watch Enthusiast & Podcaster. Fact checker for the Watch You Talking About podcast. YouTube: https://youtube.com/@watchyoutalkinabout
-- SPIRO MANDYLOR — Fashion Photographer & Style Expert. First Canadian Olympus Photography Visionary (2012); E! Celebrity Style Story panelist; collaborated with Michael Kors, Diesel, Lacoste, and more.
-- SEVAN KHIDICHIAN (Trillium Watch Service) — Certified Watchmaker. Fourth-generation watchmaker, trained in Paris at Cartier and Patek Philippe. Co-founder of Trillium Watch Service.
-- THOMAS BRISSIAUD — Founder of Tessé Watches (founded 2024). Brand inspired by his grandfather Michel; Swiss craftsmanship, vintage-inspired design.
-- THOMAS J. SANDRIN, MBA — Watch Enthusiast & Entrepreneur. 16+ years luxury watch industry; former Canadian Brand Manager for Hamilton (Swatch Group); MBA from Australian Institute of Business.
-- TYLER @HOROLOGYOBSESSED — Watch Enthusiast. Writer and photographer for Calibre321 online magazine; content creator passionate about watches and motorsport.
-- TYLER WORDEN — Industrial Designer & Founder of Worden Watch Studio. Studied Industrial Design at Carleton University; designs emotionally expressive timepieces.
-- VICTOR (@JUSTWATCHESTV) — Watch Enthusiast & Brand Distributor. 15+ years in the hobby; YouTube channel covering Laco, Zeppelin and more. https://www.youtube.com/@justwatchestv
-- VICTORIA TOWNSEND — Watch Journalist & Horology Storyteller. Ontario-born journalist; career on Bahrain TV and in Paris; covers Swiss watch shows, CEOs and designers. Instagram @victoriainparis.
-- WATCHGUYGLASGOW — Watch Enthusiast & Collector. Passion for horology sparked by family ties; focuses on watch photography and the collector community.
-
-Full list: https://watchdna.com/pages/contributors
-"""
-
 
 
 def get_knowledge_base():
@@ -153,79 +113,28 @@ def extract_budget(query: str):
     return None
 
 
-ARTICLE_QUERY_WORDS = [
-    "article", "articles", "latest", "recent", "newest", "blog", "press",
-    "release", "story", "stories", "post", "posts", "published", "news", "read", "show"
-]
+# Product types that are accessories — never recommend these as watches
+ACCESSORY_TYPES = {
+    "watch winder", "watch roll", "watch case", "safe", "accessories", "accessory",
+    "strap", "bracelet", "desk organizer", "desk organiser", "watch box",
+    "legion safes", "watch certificate", "8 piece watch winder", "16 piece watch winder",
+    "6 piece watch winder", "double watch winder", "quad watch winder",
+    "coach", "raymond weil",  # mis-typed product types in KB
+}
 
-def is_article_query(query: str) -> bool:
-    return any(w in query.lower() for w in ARTICLE_QUERY_WORDS)
-
-
-ARTICLE_SOURCES = [
-    {"url": "https://watchdna.com/blogs/press",            "label": "Press Release"},
-    {"url": "https://watchdna.com/blogs/watch-enthusiast", "label": "Community Article"},
-]
-_SCRAPE_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
-
-
-def fetch_live_articles(limit: int = 12) -> list:
-    """Scrape blog listing pages live — always returns real current dates."""
-    results = []
-    seen = set()
-    for source in ARTICLE_SOURCES:
-        try:
-            resp = requests.get(source["url"], headers=_SCRAPE_HEADERS, timeout=10)
-            if resp.status_code != 200:
-                continue
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for heading in soup.find_all(["h2", "h3"]):
-                a = heading.find("a", href=True)
-                if not a:
-                    continue
-                href = a["href"]
-                if not href.startswith("http"):
-                    href = "https://watchdna.com" + href
-                if href in seen or "/blogs/" not in href:
-                    continue
-                seen.add(href)
-                title = a.get_text(strip=True)
-                if not title or len(title) < 5:
-                    continue
-                date_str = ""
-                card = heading.parent
-                for _ in range(4):
-                    if card is None:
-                        break
-                    time_tag = card.find("time")
-                    if time_tag:
-                        date_str = time_tag.get("datetime", time_tag.get_text(strip=True))[:10]
-                        break
-                    text = card.get_text(" ", strip=True)
-                    m = re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}", text)
-                    if m:
-                        try:
-                            from datetime import datetime as _dt
-                            date_str = _dt.strptime(m.group(0), "%B %d, %Y").strftime("%Y-%m-%d")
-                        except Exception:
-                            pass
-                        break
-                    card = card.parent
-                results.append({"title": title, "url": href, "date": date_str, "type": source["label"]})
-        except Exception as e:
-            print(f"[LIVE ARTICLES] {source['url']}: {e}")
-    results.sort(key=lambda x: x.get("date", ""), reverse=True)
-    return results[:limit]
+def _is_accessory(page: dict) -> bool:
+    """Return True if this product is an accessory (not a watch)."""
+    for line in page.get("content", "").split("\n"):
+        if line.startswith("Type:"):
+            t = line.replace("Type:", "").strip().lower()
+            if t in ACCESSORY_TYPES:
+                return True
+            if t == "watches":
+                return False
+    return False
 
 
-def build_live_article_context(articles: list) -> str:
-    lines = ["LIVE ARTICLES (fetched live from watchdna.com — use these dates, ignore any KB dates):"]
-    for i, a in enumerate(articles, 1):
-        lines.append(f"{i}. {a['title']} | {a['date'] or 'recent'} | {a['type']} | {a['url']}")
-    return "\n".join(lines)
-
-
-def load_knowledge(query: str = "", currency: str = "CAD", live_article_context: str = "") -> str:
+def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     data = get_knowledge_base()
     if not data:
         return "Knowledge base not available."
@@ -234,36 +143,77 @@ def load_knowledge(query: str = "", currency: str = "CAD", live_article_context:
     budget = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
 
-    articles, non_articles = [], []
+    watches = []      # /products/ + correct currency + type=Watches + price > 0
+    accessories = []  # /products/ + correct currency + non-watch type
+    articles = []     # /blogs/ pages
+    other_pages = []  # everything else (store pages, etc.)
+
     for page in data.get("pages", []):
         url = page.get("url", "")
-        if "/products/" in url:
+        is_product = "/products/" in url
+        is_article = "/blogs/" in url
+
+        if is_product:
+            # STRICT currency match — never mix markets
             if page.get("currency", "") != currency:
                 continue
+            # Skip zero-price (not actually sold in this market)
+            if page.get("price", 0) == 0:
+                continue
+            # Skip over budget
             if budget and page.get("price", 0) > budget:
                 continue
-        if "/blogs/" in url:
+            # Separate watches from accessories
+            if _is_accessory(page):
+                accessories.append(page)
+            else:
+                watches.append(page)
+
+        elif is_article:
             articles.append(page)
         else:
-            non_articles.append(page)
+            other_pages.append(page)
 
-    articles.sort(key=lambda p: p.get("published", ""), reverse=True)
-    product_pages = [p for p in non_articles if "/products/" in p.get("url", "")]
-    print(f"[LOAD_KNOWLEDGE] currency={currency} | products={len(product_pages)} | articles={len(articles)}")
+    print(f"[LOAD_KNOWLEDGE] currency={currency} | watches={len(watches)} | accessories={len(accessories)} | articles={len(articles)}")
 
+    # Score by keyword relevance
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
 
-    if is_article_query(query):
-        ordered = articles + sorted(non_articles, key=score, reverse=True)[:15]
-    elif keywords:
-        ordered = sorted(articles + non_articles, key=score, reverse=True)[:40]
-    else:
-        ordered = articles + non_articles
+    # Determine query intent
+    query_lower = query.lower()
+    is_accessory_query = any(w in query_lower for w in [
+        "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
+    ])
+    is_article_query = any(w in query_lower for w in [
+        "article", "blog", "press", "news", "latest", "recent", "story", "post", "read"
+    ])
 
-    context = live_article_context + "\n\n" if live_article_context else ""
-    for page in ordered:
+    if is_accessory_query:
+        # Accessory query: show accessories first, then watches
+        pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
+    elif is_article_query:
+        # Article query: show articles, minimal products
+        pool = articles + other_pages + sorted(watches, key=score, reverse=True)[:5]
+    else:
+        # Default (watch recommendations): shuffle watches so results vary each request,
+        # but keep keyword-relevant ones at the top if there's a specific query
+        if keywords:
+            # Top keyword matches stay first, rest are shuffled
+            scored_watches = sorted(watches, key=score, reverse=True)
+            top = [w for w in scored_watches if score(w) > 0]
+            rest = [w for w in scored_watches if score(w) == 0]
+            random.shuffle(rest)
+            pool = top + rest + other_pages + articles
+        else:
+            # No specific query — fully shuffle so every recommendation session is different
+            shuffled = watches[:]
+            random.shuffle(shuffled)
+            pool = shuffled + other_pages + articles
+
+    context = ""
+    for page in pool:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
         if len(context) + len(entry) > 22000:
             break
@@ -273,18 +223,6 @@ def load_knowledge(query: str = "", currency: str = "CAD", live_article_context:
 SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a global directory and community for watch lovers.
 
 PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never say "As an AI".
-
-=== RESPONSE LENGTH — CRITICAL ===
-- Keep ALL responses SHORT. Max 5-6 lines for simple questions, max 8-10 lines for complex ones.
-- Never pad with filler phrases like "Feel free to ask!", "I hope that helps!", "Enjoy reading!", "Let me know if you need more!"
-- Lists: max 5 items unless user explicitly asks for more.
-- One link per item. No repeated links.
-- Get to the point immediately. No preamble.
-
-=== CONTRIBUTORS ===
-- For ANY question about WatchDNA contributors or who writes for WatchDNA, use ONLY the CONTRIBUTORS DATA section below.
-- Format: **Name** — Role. One line per person. Link their URL if they have one.
-- If asked about a specific contributor, give their name, role, and a 1-2 sentence bio from the data.
 
 === LINK FORMAT — ABSOLUTE RULES ===
 - Every link MUST be: [Descriptive Title](https://exact-url.com)
@@ -300,11 +238,17 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, friendly. Never
 - Format: [Product Name](url) — {symbol}X.XX {currency}
 - Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
-WATCH RECOMMENDATION FLOW — CRITICAL:
+=== WATCH RECOMMENDATIONS — STRICT RULES ===
 - If the user asks for watch recommendations and has NOT specified a currency in this conversation, ALWAYS ask first:
   "Which market would you like recommendations in? 🌍 CAD, USD, GBP, CHF, or EUR?"
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
-- NEVER recommend watches from a different currency than what was asked — the same watch has different entries per market and only the correct one will work.
+- NEVER recommend watches from a different currency than what was asked.
+- ONLY recommend products from https://watchdna.com/products/ URLs in the WEBSITE CONTENT.
+- NEVER recommend watches mentioned only in blog articles or press releases — those are editorial content, not store listings.
+- A watch is only available on WatchDNA if it has a /products/ URL in the WEBSITE CONTENT with a price in {currency}.
+- When asked for accessories (watch winders, straps, safes, etc.), only recommend /products/ accessories — never watches.
+- NEVER mix accessory recommendations into a watch recommendation response.
+- Each time you give recommendations, pick DIFFERENT watches from the content — vary your selections across brands, price points, and styles. Never default to the same 5 watches every time.
 
 === BRAND QUESTIONS ===
 - Use BOTH site content AND your general watch knowledge for brand history, founders, country of origin.
@@ -326,9 +270,6 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Step 1: No brand → "Which brand are you looking for?"
 - Step 2: Brand, no location → "What's your postal code or city?"
 - Step 3: Both → give filtered link from STORE LOCATOR LINKS, tell them to type postal code in the map search bar.
-
-CONTRIBUTORS DATA:
-{contributors}
 
 KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
@@ -421,15 +362,7 @@ async def chat(req: ChatRequest):
 
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
     # load_knowledge filters pages by page["currency"] == currency exactly
-    live_ctx = ""
-    if is_article_query(req.message):
-        try:
-            live_arts = fetch_live_articles(limit=12)
-            live_ctx = build_live_article_context(live_arts)
-            print(f"[LIVE ARTICLES] fetched {len(live_arts)}")
-        except Exception as e:
-            print(f"[LIVE ARTICLES] failed: {e}")
-    knowledge = load_knowledge(req.message, currency=currency, live_article_context=live_ctx)
+    knowledge = load_knowledge(req.message, currency=currency)
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     brand_map = get_brand_map()
@@ -475,7 +408,6 @@ async def chat(req: ChatRequest):
         currency=currency,
         symbol=symbol,
         store_links=store_links,
-        contributors=CONTRIBUTORS,
         knowledge=knowledge + store_hint + expensive_hint,
     )
 
