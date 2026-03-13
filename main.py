@@ -61,7 +61,6 @@ def get_most_expensive(currency: str):
 
 
 def get_brand_history_links() -> str:
-    """Build brand-name -> /blogs/history/ URL map from KB for system prompt."""
     data = get_knowledge_base()
     if not data:
         return ""
@@ -180,7 +179,6 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         context += entry
     return context
 
-# Hardcoded contributor data with individual page links
 CONTRIBUTORS = """
 CONTRIBUTORS — for each person, use their individual URL listed below as the link.
 Format every contributor as: [Full Name](their-url) — Role/bio
@@ -217,7 +215,6 @@ Format every contributor as: [Full Name](their-url) — Role/bio
 - [WatchGuyGlasgow](https://watchdna.com/pages/watchguyglasgow) — Watch Enthusiast.
 """
 
-# Hardcoded tradeshows with correct URLs
 TRADESHOWS = """
 TRADESHOWS & EVENTS on WatchDNA:
 - [Canadian Watches & Jewelry Show](https://watchdna.com/pages/canadian-watches-jewelry-show)
@@ -247,7 +244,7 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 === LINK FORMAT — ABSOLUTE RULES ===
 - Every link MUST be: [Descriptive Title](https://exact-url.com)
 - Use the product/article TITLE as link text. NEVER "here", "View here", "Read article", "Check it out".
-- ONLY use URLs from the WEBSITE CONTENT or hardcoded data below. Never construct or guess URLs.
+- ONLY use URLs from the WEBSITE CONTENT below. Never construct or guess URLs.
 - No fake links. One link per item. Never link the same item twice.
 
 === CURRENCY & PRODUCTS ===
@@ -256,17 +253,13 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 - Show prices exactly as in the content. Do NOT convert or calculate.
 - Only recommend products from WEBSITE CONTENT. Never invent product names or URLs.
 - Format: [Product Name](url) — {symbol}X.XX {currency}
+- Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
-=== WATCH RECOMMENDATIONS — STRICT RULES ===
+WATCH RECOMMENDATION FLOW — CRITICAL:
 - If the user asks for watch recommendations and has NOT specified a currency in this conversation, ALWAYS ask first:
   "Which market would you like recommendations in? 🌍 CAD, USD, GBP, CHF, or EUR?"
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
-- NEVER recommend watches from a different currency than what was asked.
-- ONLY recommend products with a /products/ URL from WEBSITE CONTENT.
-- NEVER recommend watches mentioned only in blog articles or press releases.
-- When asked for accessories (winders, straps, safes), only recommend /products/ accessories — never watches.
-- DWISS bracelets are WATCHES not accessories — never list them under accessories.
-- Each time you give recommendations, vary your selections across different brands, price points, and styles.
+- NEVER recommend watches from a different currency than what was asked — the same watch has different entries per market and only the correct one will work.
 
 === BRANDS ===
 - When asked about brands, ONLY talk about brands that appear on WatchDNA.
@@ -279,32 +272,33 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 BRAND LINKS:
 {brand_links}
 
-=== CONTRIBUTORS ===
-- Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
-- Each contributor has their own individual URL — always use that specific URL.
-- Format: [Full Name](their-individual-url) — Role/bio
+=== ARTICLES ===
+- When asked for latest/recent articles, look at the Published: field in each article in WEBSITE CONTENT and pick the one with the most recent date.
+- Present the single most recent article conversationally, then offer to show more.
+- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
+- ONLY use the exact Published: date from the article content. NEVER invent or guess a date.
+- ONLY use articles with a real /blogs/ URL. NEVER invent titles or URLs.
 
 === TRADESHOWS & AWARDS ===
 - Use the TRADESHOWS DATA below for all tradeshow info and links.
 - Follow the HOW TO ANSWER rule: pick one and describe it conversationally unless user asks for the full list.
 - Never invent tradeshow names or URLs.
 
-=== ARTICLES ===
-- For ANY question about latest/recent articles, ALWAYS use the LIVE ARTICLES section at the top of WEBSITE CONTENT — these are fetched in real time and have accurate dates.
-- The first article in LIVE ARTICLES is the most recent. Present it first.
-- Format: [Article Title](exact-url) — Published: YYYY-MM-DD
-- NEVER use a date from the KB articles section — those may be stale. Only use dates from LIVE ARTICLES.
-- NEVER invent titles, dates, or URLs.
+=== CONTRIBUTORS ===
+- Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
+- Each contributor has their own individual URL — always use that specific URL.
+- Format: [Full Name](their-individual-url) — Role/bio
 
 === STORE LOCATOR ===
-- Give them the link: https://watchdna.com/tools/storelocator
+- Step 1: No brand → "Which brand are you looking for?"
+- Step 2: Brand, no location → "What's your postal code or city?"
+- Step 3: Both → give filtered link from STORE LOCATOR LINKS, tell them to type postal code in the map search bar.
 
 KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
 - Store Locator: https://watchdna.com/tools/storelocator
 - Brands Directory: https://watchdna.com/pages/brands-dna
-- Contributors: https://watchdna.com/pages/contributors
-- Watch Enthusiast Blog: https://watchdna.com/blogs/watch-enthusiast
+- Watch Enthusiast: https://watchdna.com/blogs/watch-enthusiast
 - Press Releases: https://watchdna.com/blogs/press
 
 CONTRIBUTORS DATA:
@@ -398,9 +392,6 @@ async def chat(req: ChatRequest):
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
     # load_knowledge filters pages by page["currency"] == currency exactly
     knowledge = load_knowledge(req.message, currency=currency)
-    live_articles = fetch_live_articles()
-    if live_articles:
-        knowledge = live_articles + "\n\n" + knowledge
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     brand_map = get_brand_map()
