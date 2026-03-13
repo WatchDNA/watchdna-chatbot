@@ -126,7 +126,7 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     for page in data.get("pages", []):
         is_product = "/products/" in page.get("url", "")
         if is_product:
-            # Only include products available in the user's currency market
+            # Exact match on currency field — only show products in the user's market
             if page.get("currency", "") != currency:
                 continue
             # Filter by budget
@@ -153,7 +153,6 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
             break
         context += entry
     return context
-
 
 SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a global directory and community for watch lovers.
 
@@ -183,13 +182,12 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Use BOTH site content AND your general watch knowledge for brand history, founders, country of origin.
 - Always check if the brand has products on WatchDNA and mention with a link if so.
 
-=== ARTICLES — ASK WHICH SECTION ONLY FOR ARTICLE REQUESTS ===
-- ONLY ask "Which section?" when the user is clearly asking for articles, blog posts, or news.
-- Do NOT ask "Which section?" for awards, tradeshows, brands, products, stores, or anything else.
-- When asked for articles: "Which section? 👉 [Watch Enthusiast](https://watchdna.com/blogs/watch-enthusiast) (community stories) or [Press Releases](https://watchdna.com/blogs/press) (brand announcements)?"
-- Once they pick: list most recent from that section, newest first.
+=== ARTICLES ===
+- When asked for articles, just list the most recent ones from WEBSITE CONTENT — newest Published date first.
+- Do NOT ask which section. Mix both blogs and show the latest.
 - Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
-- ONLY use articles from WEBSITE CONTENT. Never invent titles, authors, dates, or URLs.
+- ONLY use articles from WEBSITE CONTENT with a real URL field. NEVER invent titles, authors, dates, or URLs.
+- If an article has no URL in the content, do not mention it.
 
 === TRADESHOWS & AWARDS ===
 - List ALL tradeshows or awards from the WEBSITE CONTENT with their real links.
