@@ -1,20 +1,7 @@
 """
 scraper.py — WatchDNA knowledge base builder.
 Uses Shopify Storefront API to fetch REAL prices per currency market.
-
-WHY THE OLD SCRAPER WAS BROKEN:
-  /products.json ignores ?currency= and ?country= params entirely.
-  It always returns CAD prices. The scraper was just re-labelling the
-  same CAD prices as USD/GBP/etc., which is why links only worked in CAD
-  and all other markets showed wrong prices.
-
-HOW THIS IS FIXED:
-  We use Shopify's Storefront API with a @inContext(country: XX) directive
-  which returns genuine local prices for each market.
-
-REQUIRED: Set SHOPIFY_STOREFRONT_TOKEN env var.
-  Get it from: Shopify Admin → Apps → Develop apps → your app → Storefront API access token
-  The token needs: unauthenticated_read_product_listings permission
+Fetches only from /collections/watches to avoid unpublished/renamed products.
 """
 
 import requests
@@ -24,14 +11,13 @@ import json, os, time
 from datetime import datetime, timezone
 
 BASE_URL = os.environ.get("SHOPIFY_URL", "https://watchdna.com")
-SHOP_DOMAIN = "watchdna.myshopify.com"  # UPDATE if different
+SHOP_DOMAIN = "watchdna.myshopify.com"
 STOREFRONT_TOKEN = os.environ.get("SHOPIFY_STOREFRONT_TOKEN", "")
 STOREFRONT_URL = f"https://{SHOP_DOMAIN}/api/2024-01/graphql.json"
 
 MAX_SITE_PAGES = 80
 BASE_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
 
-# Shopify country codes that trigger each currency
 MARKETS = [
     {"currency": "CAD", "symbol": "$",    "country": "CA"},
     {"currency": "USD", "symbol": "$",    "country": "US"},
@@ -40,7 +26,12 @@ MARKETS = [
     {"currency": "EUR", "symbol": "€",    "country": "FR"},
 ]
 
-BLOG_HANDLES = ["watch_enthusiast", "press"]
+BLOG_HANDLES = ["watch-enthusiast", "press"]
+
+BLOG_INFO = {
+    "watch-enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
+    "press":            {"label": "Press Release", "url_handle": "press"},
+}
 
 PRIORITY_PATHS = [
     "/", "/pages/brands-dna", "/pages/our-vision", "/pages/watchmaking",
@@ -64,23 +55,27 @@ PRIORITY_PATHS = [
     "/pages/favourite-rssfeeds", "/pages/accesories-directory",
 ]
 
-# GraphQL query — @inContext(country: $country) gives real local prices
-PRODUCTS_QUERY = """
-query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $country) {
-  products(first: 50, after: $cursor) {
-    pageInfo { hasNextPage endCursor }
-    nodes {
-      id
-      title
-      handle
-      vendor
-      productType
-      tags
-      description(truncateAt: 300)
-      priceRange {
-        minVariantPrice {
-          amount
-          currencyCode
+# KEY CHANGE: query collection instead of all products
+# This ensures only items actually published in /collections/watches are returned
+COLLECTION_QUERY = """
+query GetCollectionProducts($cursor: String, $country: CountryCode!) @inContext(country: $country) {
+  collection(handle: "watches") {
+    products(first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        title
+        handle
+        vendor
+        productType
+        tags
+        availableForSale
+        description(truncateAt: 300)
+        priceRange {
+          minVariantPrice {
+            amount
+            currencyCode
+          }
         }
       }
     }
@@ -90,7 +85,7 @@ query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $
 
 
 def storefront_fetch_all_products(market):
-    """Fetch all products for a market using Storefront API with correct local pricing."""
+    """Fetch all products in /collections/watches for a market with correct local pricing."""
     if not STOREFRONT_TOKEN:
         raise RuntimeError(
             "SHOPIFY_STOREFRONT_TOKEN env var not set.\n"
@@ -111,7 +106,7 @@ def storefront_fetch_all_products(market):
         variables = {"country": market["country"], "cursor": cursor}
         resp = requests.post(
             STOREFRONT_URL,
-            json={"query": PRODUCTS_QUERY, "variables": variables},
+            json={"query": COLLECTION_QUERY, "variables": variables},
             headers=headers,
             timeout=20,
         )
@@ -122,22 +117,28 @@ def storefront_fetch_all_products(market):
             print(f"    GraphQL errors: {data['errors']}")
             break
 
-        nodes = data["data"]["products"]["nodes"]
-        page_info = data["data"]["products"]["pageInfo"]
+        collection = data["data"].get("collection")
+        if not collection:
+            print(f"    ⚠️  collection 'watches' not found for {market['currency']}")
+            break
+
+        nodes = collection["products"]["nodes"]
+        page_info = collection["products"]["pageInfo"]
 
         for node in nodes:
             price_info = node["priceRange"]["minVariantPrice"]
             price_num = float(price_info["amount"])
-            currency = price_info["currencyCode"]  # Real currency from Shopify
+            currency = price_info["currencyCode"]
             symbol = market["symbol"]
             handle = node["handle"]
             product_url = f"{BASE_URL}/products/{handle}"
 
-            # Skip non-watch products
-            title_lower = node["title"].lower()
-            type_lower = (node["productType"] or "").lower()
-            if any(kw in title_lower or kw in type_lower
-                   for kw in ["box", "watch box", "storage", "packaging", "gift box"]):
+            # Skip if not available for sale in this market
+            if not node.get("availableForSale", True):
+                continue
+
+            # Skip zero-price — not actually sold in this market
+            if price_num == 0:
                 continue
 
             tags = ", ".join(node.get("tags", []))
@@ -157,7 +158,7 @@ def storefront_fetch_all_products(market):
                 "content": content,
                 "handle": handle,
                 "price": price_num,
-                "currency": market["currency"],  # market label for filtering
+                "currency": market["currency"],
             })
 
         print(f"    {market['currency']} page {page}: {len(nodes)} products fetched")
@@ -166,7 +167,7 @@ def storefront_fetch_all_products(market):
         if not page_info["hasNextPage"]:
             break
         cursor = page_info["endCursor"]
-        time.sleep(0.3)  # be polite
+        time.sleep(0.3)
 
     return products
 
@@ -174,13 +175,12 @@ def storefront_fetch_all_products(market):
 def scrape_products():
     seen_keys = set()
     all_products = []
-    print("\n📦 Fetching products via Storefront API (real per-market prices)...")
+    print("\n📦 Fetching products via Storefront API (collection: watches)...")
 
     for market in MARKETS:
         print(f"\n  [{market['currency']}] country={market['country']}")
         try:
             products = storefront_fetch_all_products(market)
-            # Deduplicate by handle+currency
             for p in products:
                 key = f"{p['handle']}_{p['currency']}"
                 if key not in seen_keys:
@@ -205,11 +205,6 @@ def scrape_articles():
     seen_urls = set()
     print("\n📰 Fetching articles...")
 
-    BLOG_INFO = {
-        "watch_enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
-        "press":            {"label": "Press Release", "url_handle": "press"},
-    }
-
     for blog_handle in BLOG_HANDLES:
         info = BLOG_INFO[blog_handle]
         blog_page_url = f"{BASE_URL}/blogs/{info['url_handle']}"
@@ -233,12 +228,10 @@ def scrape_articles():
                     seen_urls.add(article_url)
                     body = BeautifulSoup(post.get("body_html", "") or "", "html.parser").get_text()
 
-                    # Use updated_at if published_at looks like a bulk-import placeholder date
                     published_raw = post.get("published_at", "") or ""
                     updated_raw   = post.get("updated_at", "") or ""
                     published = published_raw[:10]
                     updated   = updated_raw[:10]
-                    # If all articles share the same date it's a fake import date — use updated_at
                     display_date = updated if published == updated[:10] else published
 
                     author = post.get("author", "") or "WatchDNA"
@@ -266,7 +259,7 @@ def scrape_articles():
                 print(f"  ✗ {blog_handle}: {e}")
                 break
 
-    # Also scrape /pages/stories which links to external & community articles
+    # /pages/stories — only add internal blog links
     try:
         resp = requests.get(f"{BASE_URL}/pages/stories", headers=BASE_HEADERS, timeout=12)
         if resp.status_code == 200:
@@ -274,11 +267,10 @@ def scrape_articles():
             domain = urlparse(BASE_URL).netloc
             for a in soup.find_all("a", href=True):
                 href = urljoin(BASE_URL, a["href"]).split("?")[0].split("#")[0]
-                # Only include blog article links from the same domain
                 if urlparse(href).netloc == domain and "/blogs/" in href and href not in seen_urls:
                     seen_urls.add(href)
                     link_text = a.get_text(strip=True)
-                    if len(link_text) > 10:  # skip nav links
+                    if len(link_text) > 10:
                         articles.append({
                             "url": href,
                             "title": link_text,
@@ -332,7 +324,11 @@ def main():
     pages = scrape_site()
 
     all_entries = products + articles + pages
+    from collections import Counter
+    by_market = Counter(p["currency"] for p in products)
     print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
+    for mkt, cnt in sorted(by_market.items()):
+        print(f"   {mkt}: {cnt} products")
 
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
         json.dump({
