@@ -196,6 +196,7 @@ LINK RULES — CRITICAL:
 - For products: ONLY use the exact URL from the "URL:" field in the website content below. Copy it character for character. NEVER guess or construct a URL.
 - If you cannot find a product's exact URL in the content, show the name as plain text — never make up a URL.
 - For articles: ONLY use the exact URL from the "URL:" field in the article content. Never construct article URLs.
+- NEVER use vague link text like [here] or [this article] — ALWAYS use the article title as the link text: [Actual Article Title](https://exact-url-from-content)
 
 WATCH RECOMMENDATIONS — CRITICAL:
 - ONLY recommend watches that appear in the WATCHDNA WEBSITE CONTENT below with an exact URL.
@@ -270,7 +271,7 @@ async def chat(req: ChatRequest):
         store_hint = (
             f"\n\nNOTE: User wants {brand_match['name']} dealers near {req.location}. "
             f"Give them this filtered map link: [{brand_match['name']} Dealers Near You]({brand_match['url']}) "
-            f"and tell them the map is pre-filtered for {brand_match['name']} — they just need to search their postal code on the map."
+            f"Tell them the map is pre-filtered for {brand_match['name']} — they just need to type '{req.location}' in the search bar on the map to see the closest dealers."
         )
     elif brand_match and is_store_query and not req.location:
         store_hint = f"\n\nNOTE: User wants {brand_match['name']} dealers but hasn't given a location yet. Ask for their postal code or city."
@@ -295,9 +296,9 @@ async def chat(req: ChatRequest):
     )
     reply = response.choices[0].message.content
 
-    # Strip ALL bold/underline junk formatting
-    reply = re.sub(r'[*]{1,2}[_]{0,2}([^*_\n]+)[_]{0,2}[*]{0,2}', r'\1', reply)
-    reply = re.sub(r'[_]{1,2}([^_\n]+)[_]{1,2}', r'\1', reply)
+    # Only strip __word__ bold that are NOT inside markdown links [text](url)
+    # Specifically: __text__ that appears outside of [...] brackets
+    reply = re.sub(r'(?<!\[)(?<!\w)__([^_\n]+)__(?!\()', r'\1', reply)
 
     # Auto-link product titles to their real URLs from knowledge base
     kb = get_knowledge_base()
