@@ -2,7 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
-import json, os, re, csv, io, urllib.request
+import json, os, re, csv, io, urllib.request, asyncio
+import requests
+from bs4 import BeautifulSoup
 from pathlib import Path
 
 app = FastAPI()
@@ -114,15 +116,15 @@ def extract_budget(query: str):
 
 
 ARTICLE_QUERY_WORDS = [
-    "article", "articles", "latest", "recent", "newest", "blog", "press", "release",
-    "story", "stories", "post", "posts", "read", "written", "published", "news"
+    "article", "articles", "latest", "recent", "newest", "blog", "press",
+    "release", "story", "stories", "post", "posts", "published", "news", "read"
 ]
 
 def is_article_query(query: str) -> bool:
     return any(w in query.lower() for w in ARTICLE_QUERY_WORDS)
 
 
-def load_knowledge(query: str = "", currency: str = "CAD") -> str:
+def load_knowledge(query: str = "", currency: str = "CAD", live_article_context: str = "") -> str:
     data = get_knowledge_base()
     if not data:
         return "Knowledge base not available."
@@ -150,7 +152,6 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         else:
             non_articles.append(page)
 
-    # Always sort articles newest-first so the AI sees the latest ones
     articles.sort(key=lambda p: p.get("published", ""), reverse=True)
 
     product_pages = [p for p in non_articles if "/products/" in p.get("url", "")]
@@ -161,22 +162,17 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         return sum(1 for kw in keywords if kw in text)
 
     if is_article_query(query):
-        # Article queries: articles at the top, sorted newest-first (or by relevance if keywords match)
-        if keywords:
-            scored_articles = sorted(articles, key=score, reverse=True)
-        else:
-            scored_articles = articles  # already newest-first
-        scored_non = sorted(non_articles, key=score, reverse=True)[:20]
-        ordered = scored_articles + scored_non
+        scored_non = sorted(non_articles, key=score, reverse=True)[:15]
+        ordered = articles + scored_non
     elif keywords:
         all_pages = articles + non_articles
-        scored = sorted(all_pages, key=score, reverse=True)
-        ordered = scored[:40]
+        ordered = sorted(all_pages, key=score, reverse=True)[:40]
     else:
-        # Default: articles newest-first, then everything else
         ordered = articles + non_articles
 
-    context = ""
+    # Prepend live article data if provided — this always wins over stale KB dates
+    context = live_article_context + "\n\n" if live_article_context else ""
+
     for page in ordered:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
         if len(context) + len(entry) > 22000:
@@ -320,7 +316,16 @@ async def chat(req: ChatRequest):
 
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
     # load_knowledge filters pages by page["currency"] == currency exactly
-    knowledge = load_knowledge(req.message, currency=currency)
+    # For article queries, fetch live from the site so dates are always accurate
+    live_ctx = ""
+    if is_article_query(req.message):
+        try:
+            live_arts = fetch_live_articles(limit=15)
+            live_ctx = build_live_article_context(live_arts)
+            print(f"[LIVE ARTICLES] fetched {len(live_arts)} articles")
+        except Exception as e:
+            print(f"[LIVE ARTICLES] failed: {e}")
+    knowledge = load_knowledge(req.message, currency=currency, live_article_context=live_ctx)
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     brand_map = get_brand_map()
@@ -412,3 +417,111 @@ async def health():
         with open(KNOWLEDGE_FILE) as f:
             last_scraped = json.load(f).get("scraped_at")
     return {"status": "ok", "knowledge_base": kb_exists, "last_scraped": last_scraped}
+
+
+# ---------------------------------------------------------------------------
+# LIVE ARTICLE FETCHER — bypasses knowledge base, always returns current data
+# ---------------------------------------------------------------------------
+ARTICLE_SOURCES = [
+    {"url": "https://watchdna.com/blogs/press",             "label": "Press Release"},
+    {"url": "https://watchdna.com/blogs/watch-enthusiast",  "label": "Community Article"},
+]
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"}
+
+def fetch_live_articles(limit: int = 10) -> list:
+    """Scrape the blog listing pages live and return articles sorted newest-first."""
+    results = []
+    seen = set()
+    for source in ARTICLE_SOURCES:
+        try:
+            resp = requests.get(source["url"], headers=_HEADERS, timeout=10)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            # Each article card has an <h3> or <h2> with an <a> inside
+            for heading in soup.find_all(["h2", "h3"]):
+                a = heading.find("a", href=True)
+                if not a:
+                    continue
+                href = a["href"]
+                if not href.startswith("http"):
+                    href = "https://watchdna.com" + href
+                if href in seen or "/blogs/" not in href:
+                    continue
+                seen.add(href)
+                title = a.get_text(strip=True)
+                if not title or len(title) < 5:
+                    continue
+                # Date: look for a sibling or nearby element with a date
+                date_str = ""
+                card = heading.parent
+                for _ in range(4):          # walk up a few levels
+                    if card is None:
+                        break
+                    time_tag = card.find("time")
+                    if time_tag:
+                        date_str = time_tag.get("datetime", time_tag.get_text(strip=True))[:10]
+                        break
+                    # also check text nodes that look like dates
+                    text = card.get_text(" ", strip=True)
+                    import re as _re
+                    m = _re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}", text)
+                    if m:
+                        from datetime import datetime as _dt
+                        try:
+                            date_str = _dt.strptime(m.group(0), "%B %d, %Y").strftime("%Y-%m-%d")
+                        except:
+                            pass
+                        break
+                    card = card.parent
+                results.append({
+                    "title": title,
+                    "url": href,
+                    "date": date_str,
+                    "type": source["label"],
+                })
+        except Exception as e:
+            print(f"[LIVE ARTICLES] {source['url']}: {e}")
+
+    # Sort newest-first (empty date falls to bottom)
+    results.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return results[:limit]
+
+
+def build_live_article_context(articles: list) -> str:
+    lines = ["LIVE ARTICLES (fetched right now from watchdna.com — these are the REAL latest articles):"]
+    for i, a in enumerate(articles, 1):
+        lines.append(
+            f"{i}. Article: {a['title']}\n"
+            f"   Published: {a['date'] or 'recent'}\n"
+            f"   Type: {a['type']}\n"
+            f"   URL: {a['url']}"
+        )
+    return "\n".join(lines)
+
+
+@app.get("/articles")
+async def get_articles(limit: int = 10):
+    """Debug endpoint — see what the live article fetcher returns."""
+    articles = fetch_live_articles(limit)
+    return {"count": len(articles), "articles": articles}
+
+
+@app.post("/scrape")
+async def trigger_scrape():
+    """Trigger a knowledge base rescrape in the background."""
+    async def run_scrape():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "python3", "scraper.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            stdout, _ = await proc.communicate()
+            global _kb_cache
+            _kb_cache = None   # bust cache so next request reloads
+            print("[SCRAPE] Done:\n" + stdout.decode()[-2000:])
+        except Exception as e:
+            print(f"[SCRAPE] Error: {e}")
+    asyncio.create_task(run_scrape())
+    return {"status": "scrape started — check /health in ~2 minutes"}
