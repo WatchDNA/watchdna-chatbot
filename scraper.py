@@ -85,6 +85,19 @@ query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $
             currencyCode
           }
         }
+        metafields(identifiers: [
+          {namespace: "custom", key: "case_size"},
+          {namespace: "custom", key: "movement"},
+          {namespace: "custom", key: "styles"},
+          {namespace: "custom", key: "color"},
+          {namespace: "custom", key: "case_material"},
+          {namespace: "custom", key: "water_resistance"},
+          {namespace: "custom", key: "strap_material"},
+          {namespace: "descriptors", key: "care_guide"}
+        ]) {
+          key
+          value
+        }
       }
     }
   }
@@ -144,6 +157,24 @@ def storefront_fetch_all_products(market):
                 continue
 
             tags = ", ".join(node.get("tags", []))
+
+            # Extract metafields into a dict
+            meta = {}
+            for mf in (node.get("metafields") or []):
+                if mf and mf.get("key") and mf.get("value"):
+                    meta[mf["key"]] = mf["value"]
+
+            # Build features string from metafields
+            feature_lines = []
+            if meta.get("case_size"):     feature_lines.append(f"Case Size: {meta['case_size']}")
+            if meta.get("movement"):      feature_lines.append(f"Movement: {meta['movement']}")
+            if meta.get("styles"):        feature_lines.append(f"Styles: {meta['styles']}")
+            if meta.get("color"):         feature_lines.append(f"Color: {meta['color']}")
+            if meta.get("case_material"): feature_lines.append(f"Case Material: {meta['case_material']}")
+            if meta.get("water_resistance"): feature_lines.append(f"Water Resistance: {meta['water_resistance']}")
+            if meta.get("strap_material"): feature_lines.append(f"Strap Material: {meta['strap_material']}")
+            features_str = "\n".join(feature_lines)
+
             content = (
                 f"Product: {node['title']}\n"
                 f"Brand/Vendor: {node['vendor']}\n"
@@ -151,7 +182,8 @@ def storefront_fetch_all_products(market):
                 f"Price: {symbol}{price_num:.2f} {currency}\n"
                 f"URL: {product_url}\n"
                 f"Tags: {tags}\n"
-                f"Description: {node.get('description', '')}"
+                f"Description: {node.get('description', '')}\n"
+                + (f"Features:\n{features_str}" if features_str else "")
             )
 
             products.append({
@@ -306,6 +338,65 @@ def scrape_articles():
     return articles
 
 
+def scrape_brand_pages() -> list:
+    """Fetch all brand history pages from /blogs/history using Shopify blog API."""
+    brand_pages = []
+    seen = set()
+    print("\n🏷️  Fetching brand history pages...")
+
+    page = 1
+    while page <= 20:
+        try:
+            api_url = f"{BASE_URL}/blogs/history.json?limit=50&page={page}"
+            resp = requests.get(api_url, headers=BASE_HEADERS, timeout=12)
+            if resp.status_code != 200:
+                break
+            articles = resp.json().get("articles", [])
+            if not articles:
+                break
+            for post in articles:
+                handle = post.get("handle", "")
+                if not handle:
+                    continue
+                brand_url = f"{BASE_URL}/blogs/history/{handle}"
+                if brand_url in seen:
+                    continue
+                seen.add(brand_url)
+
+                # Fetch the actual page for full content
+                try:
+                    page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=12)
+                    if page_resp.status_code == 200:
+                        from bs4 import BeautifulSoup as BS
+                        soup = BS(page_resp.text, "html.parser")
+                        # Remove nav/header/footer noise
+                        for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
+                            tag.decompose()
+                        text = soup.get_text(separator="\n", strip=True)
+                        # Clean up blank lines
+                        lines = [l for l in text.split("\n") if l.strip()]
+                        clean = "\n".join(lines)
+                        title = post.get("title", handle)
+                        brand_pages.append({
+                            "url": brand_url,
+                            "title": title,
+                            "content": clean[:5000],
+                        })
+                        print(f"  ✓ {title}")
+                except Exception as e:
+                    print(f"  ✗ {brand_url}: {e}")
+
+            if len(articles) < 50:
+                break
+            page += 1
+        except Exception as e:
+            print(f"  ✗ history blog page {page}: {e}")
+            break
+
+    print(f"  ✅ {len(brand_pages)} brand pages scraped")
+    return brand_pages
+
+
 def scrape_site():
     visited = set()
     domain = urlparse(BASE_URL).netloc
@@ -342,7 +433,13 @@ def main():
     print(f"WatchDNA Scraper — {datetime.now(timezone.utc).isoformat()}")
     products = scrape_products()
     articles = scrape_articles()
+    brand_pages = scrape_brand_pages()
     pages = scrape_site()
+    # Merge brand pages — override any existing /blogs/history/ entries from site crawl
+    existing_urls = {p["url"] for p in pages}
+    for bp in brand_pages:
+        if bp["url"] not in existing_urls:
+            pages.append(bp)
 
     all_entries = products + articles + pages
     print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
