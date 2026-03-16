@@ -42,6 +42,12 @@ MARKETS = [
 
 BLOG_HANDLES = ["watch-enthusiast", "press"]
 
+# Products that appear in collection API but are not real active listings
+BLOCKED_HANDLES = {
+    "1513279", "hugo-boss-admiral-watch", "master",
+    "calvin-klein-multifunction-rose-gold-plated-day-25200102",
+}
+
 PRIORITY_PATHS = [
     "/", "/pages/brands-dna", "/pages/our-vision", "/pages/watchmaking",
     "/pages/watch-aficionados", "/pages/worldwatchday", "/pages/redbar",
@@ -86,14 +92,11 @@ query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $
           }
         }
         metafields(identifiers: [
-          {namespace: "custom", key: "case_size"},
-          {namespace: "custom", key: "movement"},
           {namespace: "custom", key: "styles"},
           {namespace: "custom", key: "color"},
           {namespace: "custom", key: "case_material"},
           {namespace: "custom", key: "water_resistance"},
-          {namespace: "custom", key: "strap_material"},
-          {namespace: "descriptors", key: "care_guide"}
+          {namespace: "custom", key: "strap_material"}
         ]) {
           key
           value
@@ -164,10 +167,29 @@ def storefront_fetch_all_products(market):
                 if mf and mf.get("key") and mf.get("value"):
                     meta[mf["key"]] = mf["value"]
 
-            # Build features string from metafields
+            desc = node.get("description", "") or ""
+
+            # Extract case size from description (e.g. "42mm", "42 mm", "42MM")
+            import re as _re
+            case_size = ""
+            size_match = _re.search(r'(\d{2}(?:\.\d)?)[\s]?[Mm][Mm]', desc)
+            if size_match:
+                case_size = size_match.group(1) + "mm"
+
+            # Extract movement type from description
+            movement = ""
+            desc_lower = desc.lower()
+            if any(w in desc_lower for w in ["self-winding", "automatic movement", "automatic", " automatic"]):
+                movement = "Automatic"
+            elif any(w in desc_lower for w in ["quartz movement", "quartz", "solar", "battery"]):
+                movement = "Quartz"
+            elif "chronograph" in desc_lower:
+                movement = "Chronograph"
+
+            # Build features string
             feature_lines = []
-            if meta.get("case_size"):     feature_lines.append(f"Case Size: {meta['case_size']}")
-            if meta.get("movement"):      feature_lines.append(f"Movement: {meta['movement']}")
+            if case_size:                 feature_lines.append(f"Case Size: {case_size}")
+            if movement:                  feature_lines.append(f"Movement: {movement}")
             if meta.get("styles"):        feature_lines.append(f"Styles: {meta['styles']}")
             if meta.get("color"):         feature_lines.append(f"Color: {meta['color']}")
             if meta.get("case_material"): feature_lines.append(f"Case Material: {meta['case_material']}")
@@ -263,6 +285,8 @@ def scrape_articles():
                     if not handle:
                         continue
                     if not node.get("availableForSale", True):
+                        continue
+                    if handle in BLOCKED_HANDLES:
                         continue
                     article_url = f"{BASE_URL}/blogs/{info['url_handle']}/{handle}"
                     if article_url in seen_urls:
@@ -367,8 +391,7 @@ def scrape_brand_pages() -> list:
                 try:
                     page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=12)
                     if page_resp.status_code == 200:
-                        from bs4 import BeautifulSoup as BS
-                        soup = BS(page_resp.text, "html.parser")
+                        soup = BeautifulSoup(page_resp.text, "html.parser")
                         # Remove nav/header/footer noise
                         for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
                             tag.decompose()
