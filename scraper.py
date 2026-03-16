@@ -324,8 +324,10 @@ def scrape_site():
             soup = BeautifulSoup(resp.text, "html.parser")
             text = get_text(soup)
             title = soup.title.string.strip() if soup.title else url
+            # Give brands-dna a much higher limit since it has lots of brand entries
+            limit = 20000 if "brands-dna" in url else 3500
             if len(text) > 150:
-                pages.append({"url": url, "title": title, "content": text[:3500]})
+                pages.append({"url": url, "title": title, "content": text[:limit]})
                 print(f"  ✓ [{len(pages)}] {title[:60]}")
             for a in soup.find_all("a", href=True):
                 href = urljoin(BASE_URL, a["href"]).split("#")[0].split("?")[0]
