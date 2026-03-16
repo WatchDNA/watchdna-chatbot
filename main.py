@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
-import json, os, re, csv, io, urllib.request
+import json, os, re, csv, io, urllib.request, random
 from pathlib import Path
 
 app = FastAPI()
@@ -18,6 +18,25 @@ _kb_cache = None
 _brand_map_cache = None
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
+
+
+ACCESSORY_TYPES = {
+    "watch winder", "watch roll", "watch case", "safe", "accessories", "accessory",
+    "strap", "desk organizer", "desk organiser", "watch box", "legion safes",
+    "watch certificate", "8 piece watch winder", "16 piece watch winder",
+    "6 piece watch winder", "double watch winder", "quad watch winder",
+}
+
+
+def _is_accessory(page: dict) -> bool:
+    for line in page.get("content", "").split("\n"):
+        if line.startswith("Type:"):
+            t = line.replace("Type:", "").strip().lower()
+            if t in ACCESSORY_TYPES:
+                return True
+            if t == "watches":
+                return False
+    return False
 
 
 def get_knowledge_base():
@@ -52,6 +71,10 @@ def get_most_expensive(currency: str):
         if "/products/" not in page.get("url", ""):
             continue
         if page.get("currency", "") != currency:
+            continue
+        if _is_accessory(page):
+            continue
+        if page.get("price", 0) == 0:
             continue
         price = page.get("price", 0)
         if price > best_price:
@@ -142,37 +165,69 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     currency = currency.upper()
     budget = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
+    query_lower = query.lower()
 
-    filtered = []
+    watches = []
+    accessories = []
+    articles = []
+    other_pages = []
+
     for page in data.get("pages", []):
-        is_product = "/products/" in page.get("url", "")
+        url = page.get("url", "")
+        is_product = "/products/" in url
+        is_article = "/blogs/" in url
+
         if is_product:
-            # Exact match on currency field — only show products in the user's market
             if page.get("currency", "") != currency:
                 continue
-            # Filter by budget
+            if page.get("price", 0) == 0:
+                continue
             if budget and page.get("price", 0) > budget:
                 continue
-        filtered.append(page)
+            if _is_accessory(page):
+                accessories.append(page)
+            else:
+                watches.append(page)
+        elif is_article:
+            articles.append(page)
+        else:
+            other_pages.append(page)
+
+    print(f"[LOAD_KNOWLEDGE] currency={currency} | watches={len(watches)} | accessories={len(accessories)} | articles={len(articles)}")
 
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
 
-    if keywords:
-        scored = sorted(filtered, key=score, reverse=True)
-        relevant = scored[:30]
-        general = [p for p in filtered if p not in relevant][:10]
-        ordered = relevant + general
-    else:
-        ordered = filtered
+    is_accessory_query = any(w in query_lower for w in [
+        "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
+    ])
+    is_article_query = any(w in query_lower for w in [
+        "article", "blog", "press", "news", "latest", "recent", "story", "post", "read"
+    ])
 
-    # Debug: confirm how many products made it through the currency filter
-    product_pages = [p for p in filtered if "/products/" in p.get("url", "")]
-    print(f"[LOAD_KNOWLEDGE] currency={currency} | products after filter={len(product_pages)} | total pages={len(filtered)}")
+    if is_accessory_query:
+        pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
+    elif is_article_query:
+        def article_date(a):
+            for line in a.get("content", "").split("\n"):
+                if line.startswith("Published:"):
+                    return line.replace("Published:", "").strip()
+            return a.get("published", "")
+        pool = sorted(articles, key=article_date, reverse=True) + other_pages
+    else:
+        if keywords:
+            top = [w for w in sorted(watches, key=score, reverse=True) if score(w) > 0]
+            rest = [w for w in watches if score(w) == 0]
+            random.shuffle(rest)
+            pool = top + rest + other_pages + articles
+        else:
+            shuffled = watches[:]
+            random.shuffle(shuffled)
+            pool = shuffled + other_pages + articles
 
     context = ""
-    for page in ordered:
+    for page in pool:
         entry = f"\n\n--- {page['url']} ---\n{page['content']}"
         if len(context) + len(entry) > 22000:
             break
