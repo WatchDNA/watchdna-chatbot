@@ -67,20 +67,23 @@ PRIORITY_PATHS = [
 # GraphQL query — @inContext(country: $country) gives real local prices
 PRODUCTS_QUERY = """
 query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $country) {
-  products(first: 50, after: $cursor) {
-    pageInfo { hasNextPage endCursor }
-    nodes {
-      id
-      title
-      handle
-      vendor
-      productType
-      tags
-      description(truncateAt: 300)
-      priceRange {
-        minVariantPrice {
-          amount
-          currencyCode
+  collection(handle: "watches") {
+    products(first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        title
+        handle
+        vendor
+        productType
+        tags
+        availableForSale
+        description(truncateAt: 300)
+        priceRange {
+          minVariantPrice {
+            amount
+            currencyCode
+          }
         }
       }
     }
@@ -122,8 +125,8 @@ def storefront_fetch_all_products(market):
             print(f"    GraphQL errors: {data['errors']}")
             break
 
-        nodes = data["data"]["products"]["nodes"]
-        page_info = data["data"]["products"]["pageInfo"]
+        nodes = data["data"]["collection"]["products"]["nodes"]
+        page_info = data["data"]["collection"]["products"]["pageInfo"]
 
         for node in nodes:
             price_info = node["priceRange"]["minVariantPrice"]
@@ -226,6 +229,8 @@ def scrape_articles():
                 for post in posts:
                     handle = post.get("handle", "")
                     if not handle:
+                        continue
+                    if not node.get("availableForSale", True):
                         continue
                     article_url = f"{BASE_URL}/blogs/{info['url_handle']}/{handle}"
                     if article_url in seen_urls:
