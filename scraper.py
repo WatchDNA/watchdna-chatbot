@@ -233,18 +233,17 @@ def scrape_articles():
                     seen_urls.add(article_url)
                     body = BeautifulSoup(post.get("body_html", "") or "", "html.parser").get_text()
 
-                    # Fetch real published date from the article HTML meta tag
+                    # Fetch real date from article HTML meta tag
                     display_date = ""
                     try:
                         art_resp = requests.get(article_url, headers=BASE_HEADERS, timeout=10)
                         if art_resp.status_code == 200:
                             art_soup = BeautifulSoup(art_resp.text, "html.parser")
-                            meta_pub = art_soup.find("meta", {"property": "article:published_time"})
-                            if meta_pub and meta_pub.get("content"):
-                                display_date = meta_pub["content"][:10]
+                            meta = art_soup.find("meta", {"property": "article:published_time"})
+                            if meta and meta.get("content"):
+                                display_date = meta["content"][:10]
                     except Exception:
                         pass
-                    # Fallback to updated_at if HTML fetch failed
                     if not display_date:
                         display_date = (post.get("updated_at") or post.get("published_at") or "")[:10]
 
@@ -274,69 +273,25 @@ def scrape_articles():
                 break
 
     # Also scrape /pages/stories which links to external & community articles
-    # For each article link found, fetch the article page to get real date/author
-    def fetch_article_meta(url):
-        """Fetch an article page and extract published date and author from meta tags."""
-        try:
-            r = requests.get(url, headers=BASE_HEADERS, timeout=10)
-            if r.status_code != 200:
-                return "", ""
-            s = BeautifulSoup(r.text, "html.parser")
-            # Published date
-            date = ""
-            meta_pub = s.find("meta", {"property": "article:published_time"})
-            if meta_pub and meta_pub.get("content"):
-                date = meta_pub["content"][:10]
-            # Author
-            author = ""
-            meta_author = s.find("meta", {"name": "author"}) or s.find("meta", {"property": "article:author"})
-            if meta_author and meta_author.get("content"):
-                author = meta_author["content"].strip()
-            if not author:
-                # Try common author selectors
-                for sel in [".article__author", ".author-name", '[class*="author"]']:
-                    el = s.select_one(sel)
-                    if el:
-                        author = el.get_text(strip=True)
-                        break
-            return date, author
-        except Exception:
-            return "", ""
-
     try:
         resp = requests.get(f"{BASE_URL}/pages/stories", headers=BASE_HEADERS, timeout=12)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             domain = urlparse(BASE_URL).netloc
-            article_links = []
             for a in soup.find_all("a", href=True):
                 href = urljoin(BASE_URL, a["href"]).split("?")[0].split("#")[0]
+                # Only include blog article links from the same domain
                 if urlparse(href).netloc == domain and "/blogs/" in href and href not in seen_urls:
                     seen_urls.add(href)
                     link_text = a.get_text(strip=True)
-                    if len(link_text) > 10:
-                        article_links.append((href, link_text))
-
-            print(f"  Fetching dates for {len(article_links)} stories articles...")
-            for href, link_text in article_links:
-                date, author = fetch_article_meta(href)
-                # Determine blog category from URL
-                blog_cat = href.split("/blogs/")[-1].split("/")[0] if "/blogs/" in href else "stories"
-                content_str = (
-                    f"Article Type: Blog Article\n"
-                    f"Article: {link_text}\n"
-                    f"URL: {href}\n"
-                    f"Published: {date}\n"
-                    f"Author: {author}\n"
-                    f"Blog Page: {BASE_URL}/pages/stories"
-                )
-                articles.append({
-                    "url": href,
-                    "title": link_text,
-                    "content": content_str,
-                    "published": date,
-                    "blog": blog_cat,
-                })
+                    if len(link_text) > 10:  # skip nav links
+                        articles.append({
+                            "url": href,
+                            "title": link_text,
+                            "content": f"Article Type: Stories Page Link\nArticle: {link_text}\nURL: {href}\nBlog Page: {BASE_URL}/pages/stories",
+                            "published": "",
+                            "blog": "stories",
+                        })
             print(f"  ✓ /pages/stories: scraped additional article links")
     except Exception as e:
         print(f"  ✗ /pages/stories: {e}")
