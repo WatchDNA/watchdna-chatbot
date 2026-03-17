@@ -497,9 +497,10 @@ BRAND LINKS:
 
 === BLOGS (stories page) ===
 - "Blog" or "latest blog" refers to posts from https://watchdna.com/pages/stories
-- The stories page in WEBSITE CONTENT lists articles in order — the FIRST article title listed is the most recent.
-- Look at the stories page content and pick the very first article title that appears after "Stories All Our Contributors Watch Enthusiasts"
-- Format: [Blog Title](url) — link to https://watchdna.com/blogs/[slug]
+- The stories page content in WEBSITE CONTENT starts with: "Stories All Our Contributors Watch Enthusiasts" followed immediately by article titles in order of most recent first.
+- The FIRST title after "Watch Enthusiasts" is the latest blog. Right now that is: "STUDIO UNDERD0G BRINGS ITS "AVOCADO" ENERGY TO VANCOUVER" at https://watchdna.com/blogs/opendial/avocado
+- Always check the stories page content for the current first title — it may change after each scrape.
+- Format: [Blog Title](url)
 - NEVER invent dates for stories page blogs.
 
 === TRADESHOWS ===
