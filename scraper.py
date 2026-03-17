@@ -431,70 +431,408 @@ def scrape_articles():
 
 
 def scrape_brand_pages() -> list:
-    """Fetch all brand history pages by discovering slugs from the Shopify sitemap."""
-    brand_pages = []
-    seen = set()
-    print("\n🏷️  Fetching brand history pages via sitemap...")
-
-    # Shopify exposes a sitemap at /sitemap.xml with child sitemaps per blog
-    sitemap_urls = []
-    try:
-        resp = requests.get(f"{BASE_URL}/sitemap.xml", headers=BASE_HEADERS, timeout=12)
-        if resp.status_code == 200:
-            # Find blog sitemap entries
-            for line in resp.text.split("\n"):
-                if "sitemap_blogs" in line or "blogs" in line:
-                    import re as _re
-                    urls = _re.findall(r'<loc>(https?://[^<]+)</loc>', line)
-                    sitemap_urls.extend(urls)
-            # Also try direct blog sitemap
-            sitemap_urls.append(f"{BASE_URL}/blogs/history/sitemap.xml")
-    except Exception as e:
-        print(f"  Sitemap error: {e}")
-
-    # Try the blog sitemap directly
-    history_slugs = set()
-    for sitemap_url in sitemap_urls:
-        try:
-            resp = requests.get(sitemap_url, headers=BASE_HEADERS, timeout=12)
-            if resp.status_code == 200:
-                import re as _re
-                for url in _re.findall(r'<loc>(https?://[^<]+)</loc>', resp.text):
-                    if "/blogs/history/" in url:
-                        history_slugs.add(url.split("?")[0])
-        except Exception:
-            pass
-
-    # Also try the article API with different handles that Shopify sometimes uses
-    for api_handle in ["history", "brand-history", "brands"]:
-        for pg in range(1, 10):
-            try:
-                api_url = f"{BASE_URL}/blogs/{api_handle}.json?limit=50&page={pg}"
-                resp = requests.get(api_url, headers=BASE_HEADERS, timeout=10)
-                if resp.status_code != 200:
-                    break
-                posts = resp.json().get("articles", [])
-                if not posts:
-                    break
-                for post in posts:
-                    handle = post.get("handle","")
-                    if handle:
-                        history_slugs.add(f"{BASE_URL}/blogs/history/{handle}")
-                if len(posts) < 50:
-                    break
-            except Exception:
-                break
-
-    print(f"  Found {len(history_slugs)} brand URLs to fetch")
-
+    """Fetch all brand history pages using hardcoded slug list from brands-dna."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # Complete list of all brand slugs from watchdna.com/pages/brands-dna
+    BRAND_URLS = [
+    "https://watchdna.com/blogs/history/altsym",
+    "https://watchdna.com/blogs/history/a-lange-and-sohne",
+    "https://watchdna.com/blogs/history/abordage-horlogerie",
+    "https://watchdna.com/blogs/history/abingdon-co",
+    "https://watchdna.com/blogs/history/accutron",
+    "https://watchdna.com/blogs/history/adidas",
+    "https://watchdna.com/blogs/history/adriatica",
+    "https://watchdna.com/blogs/history/aerowatch",
+    "https://watchdna.com/blogs/history/agelocer",
+    "https://watchdna.com/blogs/history/apple",
+    "https://watchdna.com/blogs/history/aigi",
+    "https://watchdna.com/blogs/history/alpina",
+    "https://watchdna.com/blogs/history/alexander-shorokhoff",
+    "https://watchdna.com/blogs/history/angelus",
+    "https://watchdna.com/blogs/history/anonimo",
+    "https://watchdna.com/blogs/history/anordain",
+    "https://watchdna.com/blogs/history/appella",
+    "https://watchdna.com/blogs/history/aquastar",
+    "https://watchdna.com/blogs/history/arcanaut",
+    "https://watchdna.com/blogs/history/ares",
+    "https://watchdna.com/blogs/history/arilus",
+    "https://watchdna.com/blogs/history/arken",
+    "https://watchdna.com/blogs/history/arnold-and-son",
+    "https://watchdna.com/blogs/history/armani-exchange",
+    "https://watchdna.com/blogs/history/armin-strom",
+    "https://watchdna.com/blogs/history/artya-geneve",
+    "https://watchdna.com/blogs/history/ateliers-demonaco",
+    "https://watchdna.com/blogs/history/atelier-jalaper",
+    "https://watchdna.com/blogs/history/atelier-nossedh",
+    "https://watchdna.com/blogs/history/atelier-wen",
+    "https://watchdna.com/blogs/history/atlantic",
+    "https://watchdna.com/blogs/history/audemars-piguet",
+    "https://watchdna.com/blogs/history/auricoste",
+    "https://watchdna.com/blogs/history/av86",
+    "https://watchdna.com/blogs/history/avi-8",
+    "https://watchdna.com/blogs/history/awake",
+    "https://watchdna.com/blogs/history/backes-strauss",
+    "https://watchdna.com/blogs/history/ball",
+    "https://watchdna.com/blogs/history/balmain",
+    "https://watchdna.com/blogs/history/baltic",
+    "https://watchdna.com/blogs/history/bauhaus",
+    "https://watchdna.com/blogs/history/baume-et-mercier",
+    "https://watchdna.com/blogs/history/beaubleu",
+    "https://watchdna.com/blogs/history/beaucroft",
+    "https://watchdna.com/blogs/history/bell-and-ross",
+    "https://watchdna.com/blogs/history/benrus",
+    "https://watchdna.com/blogs/history/bering",
+    "https://watchdna.com/blogs/history/berney",
+    "https://watchdna.com/blogs/history/blackout-concept",
+    "https://watchdna.com/blogs/history/blancpain",
+    "https://watchdna.com/blogs/history/bohen",
+    "https://watchdna.com/blogs/history/bomberg",
+    "https://watchdna.com/blogs/history/boss",
+    "https://watchdna.com/blogs/history/bouveret",
+    "https://watchdna.com/blogs/history/breguet",
+    "https://watchdna.com/blogs/history/breitling",
+    "https://watchdna.com/blogs/history/bremont",
+    "https://watchdna.com/blogs/history/brew-watch-co",
+    "https://watchdna.com/blogs/history/briston",
+    "https://watchdna.com/blogs/history/bruno-sohnle",
+    "https://watchdna.com/blogs/history/bvlgari",
+    "https://watchdna.com/blogs/history/bvor",
+    "https://watchdna.com/blogs/history/bulova",
+    "https://watchdna.com/blogs/history/calvin-klein",
+    "https://watchdna.com/blogs/history/calypso",
+    "https://watchdna.com/blogs/history/camp",
+    "https://watchdna.com/blogs/history/campanola",
+    "https://watchdna.com/blogs/history/candino",
+    "https://watchdna.com/blogs/history/canopy",
+    "https://watchdna.com/blogs/history/canuck-timepieces",
+    "https://watchdna.com/blogs/history/carl-f-bucherer",
+    "https://watchdna.com/blogs/history/carlingue",
+    "https://watchdna.com/blogs/history/cartier",
+    "https://watchdna.com/blogs/history/casio",
+    "https://watchdna.com/blogs/history/certina",
+    "https://watchdna.com/blogs/history/chanel",
+    "https://watchdna.com/blogs/history/charlie-paris",
+    "https://watchdna.com/blogs/history/charriol",
+    "https://watchdna.com/blogs/history/chaumet",
+    "https://watchdna.com/blogs/history/chopard",
+    "https://watchdna.com/blogs/history/christiaan-van-der-klaauw",
+    "https://watchdna.com/blogs/history/christopher-ward",
+    "https://watchdna.com/blogs/history/chronoswiss",
+    "https://watchdna.com/blogs/history/cimier",
+    "https://watchdna.com/blogs/history/citizen",
+    "https://watchdna.com/blogs/history/circula",
+    "https://watchdna.com/blogs/history/claude-bernard",
+    "https://watchdna.com/blogs/history/claude-meylan",
+    "https://watchdna.com/blogs/history/clemence",
+    "https://watchdna.com/blogs/history/cluse",
+    "https://watchdna.com/blogs/history/clyda",
+    "https://watchdna.com/blogs/history/coach",
+    "https://watchdna.com/blogs/history/colorado",
+    "https://watchdna.com/blogs/history/compass",
+    "https://watchdna.com/blogs/history/concord",
+    "https://watchdna.com/blogs/history/core-timepieces",
+    "https://watchdna.com/blogs/history/corum",
+    "https://watchdna.com/blogs/history/cyrus-geneve",
+    "https://watchdna.com/blogs/history/czapek-and-cie",
+    "https://watchdna.com/blogs/history/daniel-wellington",
+    "https://watchdna.com/blogs/history/david-van-heim",
+    "https://watchdna.com/blogs/history/delma",
+    "https://watchdna.com/blogs/history/delhi-watch-company",
+    "https://watchdna.com/blogs/history/depancel",
+    "https://watchdna.com/blogs/history/diesel",
+    "https://watchdna.com/blogs/history/dior",
+    "https://watchdna.com/blogs/history/direnzo",
+    "https://watchdna.com/blogs/history/diy-watch-club",
+    "https://watchdna.com/blogs/history/dkny",
+    "https://watchdna.com/blogs/history/doxa",
+    "https://watchdna.com/blogs/history/duckworth-prestex",
+    "https://watchdna.com/blogs/history/dufrane",
+    "https://watchdna.com/blogs/history/ebel",
+    "https://watchdna.com/blogs/history/eberhard-and-co",
+    "https://watchdna.com/blogs/history/echo-neutra",
+    "https://watchdna.com/blogs/history/edox",
+    "https://watchdna.com/blogs/history/electra",
+    "https://watchdna.com/blogs/history/elge",
+    "https://watchdna.com/blogs/history/elliot-brown",
+    "https://watchdna.com/blogs/history/elka",
+    "https://watchdna.com/blogs/history/emporio-armani",
+    "https://watchdna.com/blogs/history/epos",
+    "https://watchdna.com/blogs/history/escudo",
+    "https://watchdna.com/blogs/history/eska",
+    "https://watchdna.com/blogs/history/eterna",
+    "https://watchdna.com/blogs/history/etien",
+    "https://watchdna.com/blogs/history/exaequo",
+    "https://watchdna.com/blogs/history/farr-swit",
+    "https://watchdna.com/blogs/history/farer",
+    "https://watchdna.com/blogs/history/fathers",
+    "https://watchdna.com/blogs/history/fears-bristol",
+    "https://watchdna.com/blogs/history/ferdinand-berthoud",
+    "https://watchdna.com/blogs/history/ferro-and-company",
+    "https://watchdna.com/blogs/history/ferragamo",
+    "https://watchdna.com/blogs/history/festina",
+    "https://watchdna.com/blogs/history/feynman",
+    "https://watchdna.com/blogs/history/fiori",
+    "https://watchdna.com/blogs/history/flik-flak",
+    "https://watchdna.com/blogs/history/fob-paris",
+    "https://watchdna.com/blogs/history/formex",
+    "https://watchdna.com/blogs/history/fortis",
+    "https://watchdna.com/blogs/history/fossil",
+    "https://watchdna.com/blogs/history/franck-muller",
+    "https://watchdna.com/blogs/history/frederique-constant",
+    "https://watchdna.com/blogs/history/furla",
+    "https://watchdna.com/blogs/history/furlan-marri",
+    "https://watchdna.com/blogs/history/g-shock",
+    "https://watchdna.com/blogs/history/gallet",
+    "https://watchdna.com/blogs/history/garmin",
+    "https://watchdna.com/blogs/history/gc",
+    "https://watchdna.com/blogs/history/genus",
+    "https://watchdna.com/blogs/history/geo-shop",
+    "https://watchdna.com/blogs/history/gerald-charles",
+    "https://watchdna.com/blogs/history/gerald-genta",
+    "https://watchdna.com/blogs/history/geylang-watch-co",
+    "https://watchdna.com/blogs/history/girard-perregaux",
+    "https://watchdna.com/blogs/history/glashutte-original",
+    "https://watchdna.com/blogs/history/glock-watches",
+    "https://watchdna.com/blogs/history/glycine",
+    "https://watchdna.com/blogs/history/goodevil",
+    "https://watchdna.com/blogs/history/google",
+    "https://watchdna.com/blogs/history/graham",
+    "https://watchdna.com/blogs/history/grand-seiko",
+    "https://watchdna.com/blogs/history/grone",
+    "https://watchdna.com/blogs/history/gronefeld",
+    "https://watchdna.com/blogs/history/gruppo-gamma",
+    "https://watchdna.com/blogs/history/gucci",
+    "https://watchdna.com/blogs/history/guess",
+    "https://watchdna.com/blogs/history/gustave-and-cie",
+    "https://watchdna.com/blogs/history/h-moser-and-cie",
+    "https://watchdna.com/blogs/history/haim",
+    "https://watchdna.com/blogs/history/hamilton",
+    "https://watchdna.com/blogs/history/hampden",
+    "https://watchdna.com/blogs/history/hanhart",
+    "https://watchdna.com/blogs/history/harry-winston",
+    "https://watchdna.com/blogs/history/hautlence",
+    "https://watchdna.com/blogs/history/havaan-tuvali",
+    "https://watchdna.com/blogs/history/hegid",
+    "https://watchdna.com/blogs/history/herbelin",
+    "https://watchdna.com/blogs/history/hermes",
+    "https://watchdna.com/blogs/history/heron-watches",
+    "https://watchdna.com/blogs/history/hublot",
+    "https://watchdna.com/blogs/history/hysek",
+    "https://watchdna.com/blogs/history/hyt",
+    "https://watchdna.com/blogs/history/hz-watches",
+    "https://watchdna.com/blogs/history/ice-watch",
+    "https://watchdna.com/blogs/history/imperial",
+    "https://watchdna.com/blogs/history/invicta",
+    "https://watchdna.com/blogs/history/iron-annie",
+    "https://watchdna.com/blogs/history/isotope",
+    "https://watchdna.com/blogs/history/iwc-schaffhausen",
+    "https://watchdna.com/blogs/history/jack-mason",
+    "https://watchdna.com/blogs/history/jacob-and-co",
+    "https://watchdna.com/blogs/history/jaeger-lecoultre",
+    "https://watchdna.com/blogs/history/jacques-bianchi",
+    "https://watchdna.com/blogs/history/jaguar",
+    "https://watchdna.com/blogs/history/jaipur-watch-company",
+    "https://watchdna.com/blogs/history/jakob-eitan",
+    "https://watchdna.com/blogs/history/jaquet-droz",
+    "https://watchdna.com/blogs/history/jose-cermeno",
+    "https://watchdna.com/blogs/history/jowissa",
+    "https://watchdna.com/blogs/history/junghans",
+    "https://watchdna.com/blogs/history/junkers",
+    "https://watchdna.com/blogs/history/kate-spade",
+    "https://watchdna.com/blogs/history/kelton",
+    "https://watchdna.com/blogs/history/knis",
+    "https://watchdna.com/blogs/history/kronaby",
+    "https://watchdna.com/blogs/history/kross-studio",
+    "https://watchdna.com/blogs/history/laco",
+    "https://watchdna.com/blogs/history/lacoste",
+    "https://watchdna.com/blogs/history/laurent-ferrier",
+    "https://watchdna.com/blogs/history/lee-cooper",
+    "https://watchdna.com/blogs/history/link2care",
+    "https://watchdna.com/blogs/history/lip",
+    "https://watchdna.com/blogs/history/locke-and-king",
+    "https://watchdna.com/blogs/history/locman",
+    "https://watchdna.com/blogs/history/longines",
+    "https://watchdna.com/blogs/history/long-island-watch-company",
+    "https://watchdna.com/blogs/history/lotus",
+    "https://watchdna.com/blogs/history/louis-erard",
+    "https://watchdna.com/blogs/history/louis-moinet",
+    "https://watchdna.com/blogs/history/lucky-harvey",
+    "https://watchdna.com/blogs/history/luminox",
+    "https://watchdna.com/blogs/history/mwatch",
+    "https://watchdna.com/blogs/history/maison-montignac",
+    "https://watchdna.com/blogs/history/makoto",
+    "https://watchdna.com/blogs/history/marathon",
+    "https://watchdna.com/blogs/history/march-lab",
+    "https://watchdna.com/blogs/history/marvin",
+    "https://watchdna.com/blogs/history/maserati",
+    "https://watchdna.com/blogs/history/mathey-tissot",
+    "https://watchdna.com/blogs/history/maurice-de-mauriac",
+    "https://watchdna.com/blogs/history/maurice-lacroix",
+    "https://watchdna.com/blogs/history/mbandf",
+    "https://watchdna.com/blogs/history/meistersinger",
+    "https://watchdna.com/blogs/history/mezei-watch-company",
+    "https://watchdna.com/blogs/history/michael-kors",
+    "https://watchdna.com/blogs/history/michele",
+    "https://watchdna.com/blogs/history/micromilspec",
+    "https://watchdna.com/blogs/history/mido",
+    "https://watchdna.com/blogs/history/minase",
+    "https://watchdna.com/blogs/history/missoni",
+    "https://watchdna.com/blogs/history/mona",
+    "https://watchdna.com/blogs/history/mondaine",
+    "https://watchdna.com/blogs/history/montblanc",
+    "https://watchdna.com/blogs/history/montres-etoile",
+    "https://watchdna.com/blogs/history/movado",
+    "https://watchdna.com/blogs/history/muhle-glashutte",
+    "https://watchdna.com/blogs/history/mvmt",
+    "https://watchdna.com/blogs/history/naga",
+    "https://watchdna.com/blogs/history/nautica",
+    "https://watchdna.com/blogs/history/nepto",
+    "https://watchdna.com/blogs/history/nivada-grenchen",
+    "https://watchdna.com/blogs/history/noctua",
+    "https://watchdna.com/blogs/history/nodus",
+    "https://watchdna.com/blogs/history/nomos-glashutte",
+    "https://watchdna.com/blogs/history/normalzeit",
+    "https://watchdna.com/blogs/history/northern-star-watch",
+    "https://watchdna.com/blogs/history/norqain",
+    "https://watchdna.com/blogs/history/nubeo-watches",
+    "https://watchdna.com/blogs/history/ocean-crawler",
+    "https://watchdna.com/blogs/history/oceanus",
+    "https://watchdna.com/blogs/history/olivia-burton",
+    "https://watchdna.com/blogs/history/omega",
+    "https://watchdna.com/blogs/history/oris",
+    "https://watchdna.com/blogs/history/orlam",
+    "https://watchdna.com/blogs/history/ovd",
+    "https://watchdna.com/blogs/history/panerai",
+    "https://watchdna.com/blogs/history/parmigiani-fleurier",
+    "https://watchdna.com/blogs/history/patek-philippe",
+    "https://watchdna.com/blogs/history/paulin",
+    "https://watchdna.com/blogs/history/paul-hewitt",
+    "https://watchdna.com/blogs/history/pequignet",
+    "https://watchdna.com/blogs/history/philipp-plein",
+    "https://watchdna.com/blogs/history/piaget",
+    "https://watchdna.com/blogs/history/pierre-cardin",
+    "https://watchdna.com/blogs/history/pierre-kunz",
+    "https://watchdna.com/blogs/history/pierre-lannier",
+    "https://watchdna.com/blogs/history/pilo-and-co-geneve",
+    "https://watchdna.com/blogs/history/plein-sport",
+    "https://watchdna.com/blogs/history/police",
+    "https://watchdna.com/blogs/history/porsche-design",
+    "https://watchdna.com/blogs/history/rado",
+    "https://watchdna.com/blogs/history/raymond-weil",
+    "https://watchdna.com/blogs/history/redwood",
+    "https://watchdna.com/blogs/history/reservoir-watch",
+    "https://watchdna.com/blogs/history/ressence",
+    "https://watchdna.com/blogs/history/richard-mille",
+    "https://watchdna.com/blogs/history/roamer",
+    "https://watchdna.com/blogs/history/roger-dubuis",
+    "https://watchdna.com/blogs/history/rolex",
+    "https://watchdna.com/blogs/history/rosenbusch",
+    "https://watchdna.com/blogs/history/rudis-sylva",
+    "https://watchdna.com/blogs/history/ruhla",
+    "https://watchdna.com/blogs/history/rze",
+    "https://watchdna.com/blogs/history/samsung",
+    "https://watchdna.com/blogs/history/schaefer-and-companions",
+    "https://watchdna.com/blogs/history/seagull-1963",
+    "https://watchdna.com/blogs/history/second-hour",
+    "https://watchdna.com/blogs/history/seiko",
+    "https://watchdna.com/blogs/history/selten",
+    "https://watchdna.com/blogs/history/serica",
+    "https://watchdna.com/blogs/history/shelby",
+    "https://watchdna.com/blogs/history/shinola",
+    "https://watchdna.com/blogs/history/sicis-jewels",
+    "https://watchdna.com/blogs/history/sinn-spezialuhren",
+    "https://watchdna.com/blogs/history/skagen",
+    "https://watchdna.com/blogs/history/solar-aqua",
+    "https://watchdna.com/blogs/history/solios",
+    "https://watchdna.com/blogs/history/sovrygn",
+    "https://watchdna.com/blogs/history/space-one",
+    "https://watchdna.com/blogs/history/speake-marin",
+    "https://watchdna.com/blogs/history/sphaera",
+    "https://watchdna.com/blogs/history/spinnaker",
+    "https://watchdna.com/blogs/history/stella",
+    "https://watchdna.com/blogs/history/stil-timepieces",
+    "https://watchdna.com/blogs/history/straton-watch-co",
+    "https://watchdna.com/blogs/history/straum",
+    "https://watchdna.com/blogs/history/studio-underd0g",
+    "https://watchdna.com/blogs/history/sunrex",
+    "https://watchdna.com/blogs/history/swarovski",
+    "https://watchdna.com/blogs/history/swatch",
+    "https://watchdna.com/blogs/history/swiss-military-hanowa",
+    "https://watchdna.com/blogs/history/swiss-watch",
+    "https://watchdna.com/blogs/history/sye",
+    "https://watchdna.com/blogs/history/s-coifman",
+    "https://watchdna.com/blogs/history/tag-heuer",
+    "https://watchdna.com/blogs/history/technomarine",
+    "https://watchdna.com/blogs/history/ted-baker",
+    "https://watchdna.com/blogs/history/tesse",
+    "https://watchdna.com/blogs/history/thacker-and-merali",
+    "https://watchdna.com/blogs/history/thomas-sabo",
+    "https://watchdna.com/blogs/history/tiffany-and-co",
+    "https://watchdna.com/blogs/history/timeless",
+    "https://watchdna.com/blogs/history/timex",
+    "https://watchdna.com/blogs/history/tissot",
+    "https://watchdna.com/blogs/history/titoni",
+    "https://watchdna.com/blogs/history/tommy-hilfiger",
+    "https://watchdna.com/blogs/history/tory-burch",
+    "https://watchdna.com/blogs/history/trauffer",
+    "https://watchdna.com/blogs/history/trilobe",
+    "https://watchdna.com/blogs/history/tsar-bomba",
+    "https://watchdna.com/blogs/history/tsikolia",
+    "https://watchdna.com/blogs/history/tudor",
+    "https://watchdna.com/blogs/history/tutima",
+    "https://watchdna.com/blogs/history/tweedco",
+    "https://watchdna.com/blogs/history/typsim",
+    "https://watchdna.com/blogs/history/ubiq",
+    "https://watchdna.com/blogs/history/u-boat",
+    "https://watchdna.com/blogs/history/ulysse-nardin",
+    "https://watchdna.com/blogs/history/undone",
+    "https://watchdna.com/blogs/history/union-glashutte",
+    "https://watchdna.com/blogs/history/unison",
+    "https://watchdna.com/blogs/history/universal",
+    "https://watchdna.com/blogs/history/urwerk",
+    "https://watchdna.com/blogs/history/vacheron-constantin",
+    "https://watchdna.com/blogs/history/vaer",
+    "https://watchdna.com/blogs/history/van-cleef-and-arpels",
+    "https://watchdna.com/blogs/history/vario",
+    "https://watchdna.com/blogs/history/venezianico",
+    "https://watchdna.com/blogs/history/ventura",
+    "https://watchdna.com/blogs/history/verdure",
+    "https://watchdna.com/blogs/history/vero",
+    "https://watchdna.com/blogs/history/versace",
+    "https://watchdna.com/blogs/history/victorinox",
+    "https://watchdna.com/blogs/history/vieren",
+    "https://watchdna.com/blogs/history/visitor",
+    "https://watchdna.com/blogs/history/von-doren",
+    "https://watchdna.com/blogs/history/vortic",
+    "https://watchdna.com/blogs/history/vulcain",
+    "https://watchdna.com/blogs/history/wancher",
+    "https://watchdna.com/blogs/history/watchcraft",
+    "https://watchdna.com/blogs/history/watchpeople",
+    "https://watchdna.com/blogs/history/wenger",
+    "https://watchdna.com/blogs/history/whitby",
+    "https://watchdna.com/blogs/history/wilk-watchworks",
+    "https://watchdna.com/blogs/history/wise",
+    "https://watchdna.com/blogs/history/worden",
+    "https://watchdna.com/blogs/history/yema",
+    "https://watchdna.com/blogs/history/zenea",
+    "https://watchdna.com/blogs/history/zenith",
+    "https://watchdna.com/blogs/history/zeppelin",
+    "https://watchdna.com/blogs/history/zodiac",
+    "https://watchdna.com/blogs/history/5280-watch-company",
+    ]
+
+    brand_pages = []
+    print(f"\n🏷️  Fetching {len(BRAND_URLS)} brand history pages (parallel)...")
 
     def fetch_brand(brand_url):
         try:
-            page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=6)
-            if page_resp.status_code != 200:
+            resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=8)
+            if resp.status_code == 404:
+                return None  # Brand page doesn't exist yet
+            if resp.status_code != 200:
                 return None
-            soup = BeautifulSoup(page_resp.text, "html.parser")
+            soup = BeautifulSoup(resp.text, "html.parser")
             for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
                 tag.decompose()
             lines = [l for l in soup.get_text(separator="\n", strip=True).split("\n") if l.strip()]
@@ -505,9 +843,8 @@ def scrape_brand_pages() -> list:
         except Exception:
             return None
 
-    urls_to_fetch = [u for u in sorted(history_slugs) if u not in seen]
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(fetch_brand, url): url for url in urls_to_fetch}
+    with ThreadPoolExecutor(max_workers=15) as executor:
+        futures = {executor.submit(fetch_brand, url): url for url in BRAND_URLS}
         for future in as_completed(futures):
             result = future.result()
             if result:
