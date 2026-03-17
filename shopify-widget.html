@@ -1,0 +1,322 @@
+<!-- 
+  WATCHDNA CHATBOT WIDGET
+  Paste this entire block just before </body> in your Shopify theme.liquid file.
+  Replace YOUR_BACKEND_URL with your Render deployment URL.
+  e.g. https://watchdna-chatbot-api.onrender.com
+-->
+
+<script>
+(function() {
+  const BACKEND_URL = "YOUR_BACKEND_URL"; // <-- replace this
+
+  const style = document.createElement("style");
+  style.textContent = `
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500&display=swap');
+
+    #wd-launcher {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: #1a1a1a;
+      border: 1.5px solid #c9a84c;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+      z-index: 9999;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    #wd-launcher:hover {
+      transform: scale(1.07);
+      box-shadow: 0 6px 32px rgba(201,168,76,0.25);
+    }
+
+    #wd-window {
+      position: fixed;
+      bottom: 96px;
+      right: 24px;
+      width: 360px;
+      max-height: 530px;
+      border-radius: 16px;
+      background: #fafaf8;
+      box-shadow: 0 8px 48px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      z-index: 9998;
+      overflow: hidden;
+      transform: scale(0.94) translateY(12px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 0.28s cubic-bezier(.34,1.56,.64,1), opacity 0.2s ease;
+    }
+    #wd-window.open {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    #wd-header {
+      background: #1a1a1a;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #wd-header .wd-logo {
+      width: 36px; height: 36px;
+      background: #c9a84c22;
+      border: 1px solid #c9a84c55;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    #wd-header .wd-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 0.3px;
+    }
+    #wd-header .wd-sub {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 10px;
+      color: #c9a84c;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+    #wd-close {
+      margin-left: auto;
+      background: none; border: none;
+      color: #ffffff55; cursor: pointer;
+      font-size: 22px; line-height: 1; padding: 0;
+      transition: color 0.2s;
+    }
+    #wd-close:hover { color: #fff; }
+
+    #wd-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 14px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      scroll-behavior: smooth;
+      background: #fafaf8;
+    }
+    #wd-messages::-webkit-scrollbar { width: 3px; }
+    #wd-messages::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+    .wd-msg {
+      max-width: 84%;
+      padding: 10px 13px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      line-height: 1.55;
+      word-break: break-word;
+      animation: wd-pop 0.22s ease;
+    }
+    @keyframes wd-pop {
+      from { opacity: 0; transform: translateY(7px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .wd-msg.bot {
+      background: #fff;
+      color: #1a1a1a;
+      border-radius: 14px 14px 14px 3px;
+      border: 1px solid #ece9e1;
+      align-self: flex-start;
+    }
+    .wd-msg.user {
+      background: #1a1a1a;
+      color: #fff;
+      border-radius: 14px 14px 3px 14px;
+      align-self: flex-end;
+    }
+    .wd-msg.bot a { color: #c9a84c; }
+
+    .wd-typing {
+      display: flex; gap: 4px; align-items: center;
+      padding: 11px 14px;
+      background: #fff;
+      border-radius: 14px 14px 14px 3px;
+      border: 1px solid #ece9e1;
+      align-self: flex-start;
+      width: fit-content;
+    }
+    .wd-typing span {
+      width: 6px; height: 6px;
+      background: #c9a84c; border-radius: 50%;
+      animation: wd-bounce 1.2s infinite;
+    }
+    .wd-typing span:nth-child(2) { animation-delay: 0.18s; }
+    .wd-typing span:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes wd-bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.6; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    #wd-footer {
+      padding: 10px 12px 12px;
+      display: flex;
+      gap: 8px;
+      border-top: 1px solid #ece9e1;
+      background: #fafaf8;
+    }
+    #wd-input {
+      flex: 1;
+      border: 1.5px solid #e2dfd5;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-family: 'DM Sans', sans-serif;
+      background: #fff;
+      outline: none;
+      color: #1a1a1a;
+      transition: border-color 0.2s;
+    }
+    #wd-input:focus { border-color: #c9a84c; }
+    #wd-input::placeholder { color: #aaa; }
+
+    #wd-send {
+      width: 38px; height: 38px;
+      border-radius: 10px;
+      background: #1a1a1a;
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, transform 0.15s;
+      flex-shrink: 0;
+    }
+    #wd-send:hover { background: #333; transform: scale(1.05); }
+    #wd-send:disabled { background: #ccc; cursor: default; transform: none; }
+
+    #wd-branding {
+      text-align: center;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 10px;
+      color: #bbb;
+      padding: 0 0 8px;
+      letter-spacing: 0.4px;
+    }
+    #wd-branding a { color: #c9a84c; text-decoration: none; }
+
+    @media (max-width: 400px) {
+      #wd-window { width: calc(100vw - 20px); right: 10px; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  document.body.insertAdjacentHTML("beforeend", `
+    <button id="wd-launcher" aria-label="Open WatchDNA chat">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c9a84c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    </button>
+
+    <div id="wd-window" role="dialog" aria-label="WatchDNA Chat Assistant">
+      <div id="wd-header">
+        <div class="wd-logo">⌚</div>
+        <div>
+          <div class="wd-title">WatchBot</div>
+          <div class="wd-sub">WatchDNA Assistant</div>
+        </div>
+        <button id="wd-close" aria-label="Close chat">×</button>
+      </div>
+      <div id="wd-messages"></div>
+      <div id="wd-footer">
+        <input id="wd-input" type="text" placeholder="Ask about watches, brands, dealers..." maxlength="500" autocomplete="off" />
+        <button id="wd-send" aria-label="Send">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div id="wd-branding">Powered by <a href="https://watchdna.com" target="_blank">WatchDNA</a></div>
+    </div>
+  `);
+
+  const launcher = document.getElementById("wd-launcher");
+  const win      = document.getElementById("wd-window");
+  const closeBtn = document.getElementById("wd-close");
+  const input    = document.getElementById("wd-input");
+  const sendBtn  = document.getElementById("wd-send");
+  const msgs     = document.getElementById("wd-messages");
+
+  let history  = [];
+  let isOpen   = false;
+  let isLoading = false;
+
+  const GREETING = "Welcome to WatchDNA! ⌚ I'm WatchBot, your guide to the world of horology. Ask me about watch brands, authorized dealers, upcoming shows, our buyer's guide, or anything watch-related!";
+
+  function toggleChat() {
+    isOpen = !isOpen;
+    win.classList.toggle("open", isOpen);
+    if (isOpen && msgs.children.length === 0) addMsg("bot", GREETING);
+    if (isOpen) setTimeout(() => input.focus(), 300);
+  }
+
+  function addMsg(role, text) {
+    const el = document.createElement("div");
+    el.className = "wd-msg " + role;
+    el.textContent = text;
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function showTyping() {
+    const el = document.createElement("div");
+    el.className = "wd-typing"; el.id = "wd-typing";
+    el.innerHTML = "<span></span><span></span><span></span>";
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function hideTyping() {
+    const el = document.getElementById("wd-typing");
+    if (el) el.remove();
+  }
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || isLoading) return;
+
+    input.value = "";
+    addMsg("user", text);
+    history.push({ role: "user", content: text });
+
+    isLoading = true;
+    sendBtn.disabled = true;
+    showTyping();
+
+    try {
+      const res = await fetch(BACKEND_URL + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: history.slice(-10) }),
+      });
+      const data = await res.json();
+      hideTyping();
+      addMsg("bot", data.reply || "Sorry, I couldn't get a response.");
+      history.push({ role: "assistant", content: data.reply });
+    } catch (e) {
+      hideTyping();
+      addMsg("bot", "I'm having a little trouble connecting right now. Please try again in a moment!");
+    }
+
+    isLoading = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+
+  launcher.addEventListener("click", toggleChat);
+  closeBtn.addEventListener("click", toggleChat);
+  sendBtn.addEventListener("click", sendMessage);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+})();
+</script>
