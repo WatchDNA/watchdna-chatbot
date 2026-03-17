@@ -354,6 +354,8 @@ GEORGIA: Tsikolia
 GERMANY: Adidas, Bruno Sohnle, Circula, Glashütte Original, Hanhart, Iron Annie, Junghans, Junkers,
 Laco, MeisterSinger, Nomos Glashütte, Paul Hewitt, Sinn Spezialuhren, Thomas Sabo, Union Glashütte, Zeppelin
 
+Note: Glock Watches is headquartered in Tennessee, USA (not Austria — the firearms company is Austrian but the watch brand is based in the USA)
+
 GREECE: Stil Timepieces
 
 HONG KONG: DIY Watch Club, Electra, Link2Care, Nubeo, OVD, Schaefer & Companions, Tsar Bomba, Undone
@@ -404,7 +406,7 @@ UNITED KINGDOM: anOrdain, Arken, AVI-8, Beaucroft, Bremont, Christopher Ward, Cl
 Duckworth Prestex, Elliot Brown, Escudo, Fears Bristol, Isotope, Le Coc, Mezei,
 Olivia Burton, Paulin, Selten, Studio Underd0g, Ted Baker
 
-UNITED STATES OF AMERICA: (A)LT|SYM, Abingdon, Ares, Benrus, Brew Watch Co, Bulova, Coach,
+UNITED STATES OF AMERICA: (A)LT|SYM, Abingdon, Ares, Benrus, Brew Watch Co, Bulova, Coach, Glock Watches,
 Colorado, Compass, Core Timepieces, DKNY, Dufrane, Farr + Swit, Fossil, Garmin, GC, Good+evil,
 Guess, Haim, Hampden, Invicta, Jack Mason, Jacob & Co, Kate Spade, Kirkland, Michael Kors,
 Michele, MVMT, Nautica, Nodus, Shinola, Skagen, Stella, S. Coifman, Timex, Tommy Hilfiger,
