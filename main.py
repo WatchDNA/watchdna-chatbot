@@ -29,13 +29,22 @@ ACCESSORY_TYPES = {
 
 
 def _is_accessory(page: dict) -> bool:
-    for line in page.get("content", "").split("\n"):
+    content = page.get("content", "")
+    # Check Type field
+    for line in content.split("\n"):
         if line.startswith("Type:"):
             t = line.replace("Type:", "").strip().lower()
             if t in ACCESSORY_TYPES:
                 return True
             if t == "watches":
                 return False
+    # Check URL — products from /collections/accessories are accessories
+    url = page.get("url", "")
+    if "/products/" in url:
+        title = page.get("title", "").lower()
+        if any(kw in title for kw in ["winder", "safe", "roll", "box", "case", "strap",
+                                       "organizer", "organiser", "storage", "pouch"]):
+            return True
     return False
 
 
@@ -205,6 +214,14 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     is_article_query = any(w in query_lower for w in [
         "article", "blog", "press", "news", "latest", "recent", "story", "post", "read"
     ])
+    is_brand_query = any(w in query_lower for w in [
+        "brand", "brands", "about", "history", "founded", "company", "who makes",
+        "canadian", "swiss", "german", "french", "japanese", "american", "country",
+        "group", "groups", "cartier", "rolex", "omega", "seiko", "breitling",
+        "hublot", "tag heuer", "patek", "tudor", "longines", "tissot", "rado",
+        "hamilton", "certina", "mido", "norqain", "fortis", "luminox", "casio",
+        "movado", "citizen", "bulova", "accutron", "alpina", "bering", "dwiss"
+    ])
 
     if is_accessory_query:
         pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
@@ -215,6 +232,13 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
                     return line.replace("Published:", "").strip()
             return a.get("published", "")
         pool = sorted(articles, key=article_date, reverse=True) + other_pages
+    elif is_brand_query:
+        # Put brands-dna, history pages, and groups page first
+        brand_pages = [p for p in other_pages if any(x in p.get("url","") for x in
+                       ["/blogs/history/", "brands-dna", "/pages/groups"])]
+        rest_pages = [p for p in other_pages if p not in brand_pages]
+        keyword_watches = sorted(watches, key=score, reverse=True)[:10]
+        pool = brand_pages + rest_pages + keyword_watches + articles
     else:
         if keywords:
             top = [w for w in sorted(watches, key=score, reverse=True) if score(w) > 0]
@@ -285,6 +309,25 @@ TRADESHOWS & EVENTS on WatchDNA:
 - [We Love Watches](https://watchdna.com/pages/we-love-watches-2025-participating-brands)
 """
 
+
+AWARDS = """
+WATCH AWARDS on WatchDNA (always link these when asked about awards):
+- [Timepiece World Awards](https://watchdna.com/pages/timepiece-world-awards)
+- [Temporis International Awards](https://watchdna.com/pages/the-temporis-international-awards)
+- [Grand Prix d'Horlogerie de Genève](https://watchdna.com/pages/grand-prix-horlogerie-geneve)
+- [Hong Kong Watch & Clock Design Competition](https://watchdna.com/pages/the-42nd-hong-kong-watch-clock-design-competition)
+"""
+
+CANADIAN_BRANDS = """
+CANADIAN WATCH BRANDS on WatchDNA (these are confirmed Canadian brands from the brands-dna directory):
+Ferro & Company, FIORI, Héron, Jakob Eitan, José Cermeño Montréal, Makoto Watch Company,
+Noctua Watches, Locke & King, Marathon, Redwood, Shelby Watch Co., SOLIOS, SOVRYGN,
+Tesse Watches, Thacker Merali, UNISON, VIEREN, Whitby Watch Co., Wilk Watchworks,
+Worden Watch Studio, ZENEA
+Note: For each Canadian brand, link to https://watchdna.com/blogs/history/[brand-slug] if available,
+otherwise https://watchdna.com/pages/brands-dna
+"""
+
 SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a global directory and community for watch lovers.
 
 PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational, friendly. Never say "As an AI".
@@ -340,16 +383,20 @@ BRAND LINKS:
 {brand_links}
 
 === ARTICLES ===
-- When asked for latest/recent articles, look at the Published: field in each article in WEBSITE CONTENT and pick the one with the most recent date.
-- Present the single most recent article conversationally, then offer to show more.
-- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
-- ONLY use the exact Published: date from the article content. NEVER invent or guess a date.
+- When asked for latest/recent articles, pick articles from WEBSITE CONTENT that appear most recently added (they will be near the top of the content).
+- Present one article conversationally with its link, then offer to show more.
+- Format: [Article Title](url)
+- Do NOT show a date unless the article content explicitly has "Published: YYYY-MM-DD" — most articles do not have dates so just omit it.
 - ONLY use articles with a real /blogs/ URL. NEVER invent titles or URLs.
 
-=== TRADESHOWS & AWARDS ===
+=== TRADESHOWS ===
 - Use the TRADESHOWS DATA below for all tradeshow info and links.
 - Follow the HOW TO ANSWER rule: pick one and describe it conversationally unless user asks for the full list.
 - Never invent tradeshow names or URLs.
+
+=== AWARDS ===
+- Use the AWARDS DATA below for all award info and links.
+- Always link to the award page when mentioned.
 
 === CONTRIBUTORS ===
 - Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
@@ -372,6 +419,12 @@ CONTRIBUTORS DATA:
 
 TRADESHOWS DATA:
 {tradeshows}
+
+AWARDS DATA:
+{awards}
+
+CANADIAN BRANDS DATA:
+{canadian_brands}
 
 STORE LOCATOR LINKS BY BRAND:
 {store_links}
@@ -497,6 +550,8 @@ async def chat(req: ChatRequest):
         symbol=symbol,
         contributors=CONTRIBUTORS,
         tradeshows=TRADESHOWS,
+        awards=AWARDS,
+        canadian_brands=CANADIAN_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
         knowledge=knowledge + store_hint + expensive_hint,
