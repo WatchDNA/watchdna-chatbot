@@ -328,6 +328,23 @@ Note: For each Canadian brand, link to https://watchdna.com/blogs/history/[brand
 otherwise https://watchdna.com/pages/brands-dna
 """
 
+
+ALL_BRANDS = """
+Every brand on WatchDNA has a page at https://watchdna.com/blogs/history/[slug].
+Use lowercase-hyphenated slugs (e.g. "A. Lange & Söhne" → "a-lange-sohne", "TAG Heuer" → "tag-heuer").
+
+CONFIRMED BRANDS ON WATCHDNA (partial list — always try /blogs/history/[slug]):
+A. Lange & Söhne, Accutron, Alpina, Arnold & Son, Audemars Piguet, Ball, Baume et Mercier,
+Bering, Bell & Ross, Blancpain, Breguet, Breitling, Bulova, Calvin Klein, Cartier, Casio,
+Certina, Chopard, Citizen, Christopher Ward, Doxa, Ebel, Eterna, Festina, Fortis, Fossil,
+Franck Muller, Frédérique Constant, G-Shock, Girard Perregaux, Glashütte Original, Hamilton,
+Hermès, Hublot, IWC Schaffhausen, Jaeger-LeCoultre, Junghans, Laco, Longines, Luminox,
+Maurice Lacroix, MB&F, Mido, Mondaine, Montblanc, Movado, Nomos Glashütte, Norqain, Omega,
+Oris, Panerai, Patek Philippe, Piaget, Rado, Raymond Weil, Richard Mille, Rolex, Seiko,
+Sinn, Swatch, TAG Heuer, Tissot, Tudor, Ulysse Nardin, Vacheron Constantin, Zenith,
+Elka, Tessé, Worden, Normalzeit, Fortis, DWISS, Luminox, Alpina, Bulova, Bering
+"""
+
 SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a global directory and community for watch lovers.
 
 PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational, friendly. Never say "As an AI".
@@ -373,7 +390,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 
 === BRANDS ===
 - ONLY use facts from WEBSITE CONTENT for every brand. NEVER use your training knowledge to fill in founding dates, founders, countries, stories, or any other brand facts.
-- Every brand you mention MUST have a link. If it has a /blogs/history/ page in BRAND LINKS use that URL. Otherwise link to https://watchdna.com/pages/brands-dna
+- Every brand you mention MUST have a link. Use the URL pattern: https://watchdna.com/blogs/history/[brand-slug] (e.g. Cartier → https://watchdna.com/blogs/history/cartier, Rolex → https://watchdna.com/blogs/history/rolex). If the brand has no history page, link to https://watchdna.com/pages/brands-dna
 - If a brand is not in WEBSITE CONTENT at all, say it's not currently on WatchDNA and link to https://watchdna.com/pages/brands-dna
 - If WEBSITE CONTENT has no detail about a brand beyond its products, say "I don't have detailed background info on this brand yet" — never invent facts.
 - NEVER describe a brand as Canadian, Swiss, German etc. unless WEBSITE CONTENT explicitly says so.
@@ -383,10 +400,10 @@ BRAND LINKS:
 {brand_links}
 
 === ARTICLES ===
-- When asked for latest/recent articles, pick articles from WEBSITE CONTENT that appear most recently added (they will be near the top of the content).
-- Present one article conversationally with its link, then offer to show more.
-- Format: [Article Title](url)
-- Do NOT show a date unless the article content explicitly has "Published: YYYY-MM-DD" — most articles do not have dates so just omit it.
+- When asked for latest/recent articles, use WEBSITE CONTENT — articles are sorted newest first.
+- Pick the first article with a "Published:" date in its content.
+- Format: [Article Title](url) — Published: YYYY-MM-DD
+- ONLY use the exact "Published:" date from the article content. NEVER invent dates.
 - ONLY use articles with a real /blogs/ URL. NEVER invent titles or URLs.
 
 === TRADESHOWS ===
@@ -425,6 +442,9 @@ AWARDS DATA:
 
 CANADIAN BRANDS DATA:
 {canadian_brands}
+
+ALL BRANDS ON WATCHDNA:
+{all_brands}
 
 STORE LOCATOR LINKS BY BRAND:
 {store_links}
@@ -552,6 +572,7 @@ async def chat(req: ChatRequest):
         tradeshows=TRADESHOWS,
         awards=AWARDS,
         canadian_brands=CANADIAN_BRANDS,
+        all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
         knowledge=knowledge + store_hint + expensive_hint,
