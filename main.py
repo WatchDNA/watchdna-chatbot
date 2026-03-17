@@ -216,8 +216,9 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     ])
     is_brand_query = any(w in query_lower for w in [
         "brand", "brands", "about", "history", "founded", "company", "who makes",
-        "canadian", "swiss", "german", "french", "japanese", "american", "country",
-        "group", "groups", "cartier", "rolex", "omega", "seiko", "breitling",
+        "canadian", "swiss", "german", "french", "japanese", "american", "italian",
+        "british", "danish", "norwegian", "greek", "georgian", "australian", "spanish",
+        "country", "group", "groups", "cartier", "rolex", "omega", "seiko", "breitling",
         "hublot", "tag heuer", "patek", "tudor", "longines", "tissot", "rado",
         "hamilton", "certina", "mido", "norqain", "fortis", "luminox", "casio",
         "movado", "citizen", "bulova", "accutron", "alpina", "bering", "dwiss"
@@ -318,14 +319,50 @@ WATCH AWARDS on WatchDNA (always link these when asked about awards):
 - [Hong Kong Watch & Clock Design Competition](https://watchdna.com/pages/the-42nd-hong-kong-watch-clock-design-competition)
 """
 
-CANADIAN_BRANDS = """
-CANADIAN WATCH BRANDS on WatchDNA (these are confirmed Canadian brands from the brands-dna directory):
-Ferro & Company, FIORI, Héron, Jakob Eitan, José Cermeño Montréal, Makoto Watch Company,
+BRANDS_BY_COUNTRY = """
+WATCH BRANDS BY COUNTRY on WatchDNA — use this to answer questions about brands from specific countries.
+For each brand, link to https://watchdna.com/blogs/history/[slug] (lowercase hyphenated).
+
+CANADA: Ferro & Company, FIORI, Héron, Jakob Eitan, José Cermeño Montréal, Makoto Watch Company,
 Noctua Watches, Locke & King, Marathon, Redwood, Shelby Watch Co., SOLIOS, SOVRYGN,
-Tesse Watches, Thacker Merali, UNISON, VIEREN, Whitby Watch Co., Wilk Watchworks,
-Worden Watch Studio, ZENEA
-Note: For each Canadian brand, link to https://watchdna.com/blogs/history/[brand-slug] if available,
-otherwise https://watchdna.com/pages/brands-dna
+Tessé Watches, Thacker Merali, UNISON, VIEREN, Whitby Watch Co., Wilk Watchworks, Worden Watch Studio, ZENEA
+
+SWITZERLAND: A. Lange & Söhne, Alpina, Arnold & Son, Audemars Piguet, Ball, Baume et Mercier,
+Blancpain, Breguet, Breitling, Carl F. Bucherer, Cartier, Certina, Chopard, Christiaan Van Der Klaauw,
+Christopher Ward, Chronoswiss, Concord, Corum, Czapek & Cie, Doxa, Ebel, Eterna, Fortis,
+Franck Muller, Frédérique Constant, Girard Perregaux, H. Moser & Cie., Hamilton, Hautlence,
+Hublot, HYT, IWC Schaffhausen, Jaeger-LeCoultre, Jaquet Droz, Laurent Ferrier, Longines,
+Louis Erard, Luminox, Maurice Lacroix, MB&F, Mido, Mondaine, Montblanc, Norqain, Omega,
+Oris, Panerai, Parmigiani Fleurier, Patek Philippe, Piaget, Rado, Raymond Weil,
+Richard Mille, Rolex, Swatch, TAG Heuer, Tissot, Tudor, Ulysse Nardin, Vacheron Constantin,
+Victorinox, Vulcain, Zenith
+
+GERMANY: A. Lange & Söhne, Glashütte Original, Hanhart, Iron Annie, Junghans, Junkers,
+Laco, MeisterSinger, Montblanc, Nomos Glashütte, Sinn Spezialuhren, Union Glashütte, Zeppelin
+
+JAPAN: Casio, Citizen, G-Shock, Grand Seiko, Oceanus, Seiko
+
+FRANCE: Bell & Ross, Cartier, Chaumet, Hermès, Lip, Louis Moinet
+
+UNITED STATES: Accutron, Bulova, Fossil, Hamilton, Invicta, Marathon, MVMT, Shinola, Timex
+
+UNITED KINGDOM: Bremont, Christopher Ward, Fears Bristol
+
+DENMARK: Bering, Skagen
+
+ITALY: Panerai, U-Boat, Locman
+
+AUSTRALIA: RZE
+
+SPAIN: Festina
+
+GEORGIA: Tsikolia
+
+NORWAY: Straum
+
+GREECE: Sphaera
+
+Note: When asked about brands from a country, list from the relevant section above and link each one.
 """
 
 
@@ -393,7 +430,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Every brand you mention MUST have a link. Use the URL pattern: https://watchdna.com/blogs/history/[brand-slug] (e.g. Cartier → https://watchdna.com/blogs/history/cartier, Rolex → https://watchdna.com/blogs/history/rolex). If the brand has no history page, link to https://watchdna.com/pages/brands-dna
 - If a brand is not in WEBSITE CONTENT at all, say it's not currently on WatchDNA and link to https://watchdna.com/pages/brands-dna
 - If WEBSITE CONTENT has no detail about a brand beyond its products, say "I don't have detailed background info on this brand yet" — never invent facts.
-- NEVER describe a brand as Canadian, Swiss, German etc. unless WEBSITE CONTENT explicitly says so.
+- When asked about brands from a specific country, use BRANDS BY COUNTRY data — it has the confirmed list.
 - When asked about brand groups (Casio Group, Swatch Group, LVMH etc.) always add: "You can explore all brand groups at [Brand Groups](https://watchdna.com/pages/groups)"
 
 BRAND LINKS:
@@ -440,8 +477,8 @@ TRADESHOWS DATA:
 AWARDS DATA:
 {awards}
 
-CANADIAN BRANDS DATA:
-{canadian_brands}
+BRANDS BY COUNTRY:
+{brands_by_country}
 
 ALL BRANDS ON WATCHDNA:
 {all_brands}
@@ -571,7 +608,7 @@ async def chat(req: ChatRequest):
         contributors=CONTRIBUTORS,
         tradeshows=TRADESHOWS,
         awards=AWARDS,
-        canadian_brands=CANADIAN_BRANDS,
+        brands_by_country=BRANDS_BY_COUNTRY,
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
