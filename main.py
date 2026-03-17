@@ -328,44 +328,87 @@ BRANDS_BY_COUNTRY = """
 WATCH BRANDS BY COUNTRY on WatchDNA — use this to answer questions about brands from specific countries.
 For each brand, link to https://watchdna.com/blogs/history/[slug] (lowercase hyphenated).
 
+AUSTRALIA: Hz Watches, Second Hour
+
+AUSTRIA: Normalzeit, Sphaera
+
+BELGIUM: Atelier Jalaper, Ice Watch, Ressence, Seagull 1963
+
 CANADA: Ferro & Company, FIORI, Héron, Jakob Eitan, José Cermeño Montréal, Makoto Watch Company,
 Noctua Watches, Locke & King, Marathon, Redwood, Shelby Watch Co., SOLIOS, SOVRYGN,
 Tessé Watches, Thacker Merali, UNISON, VIEREN, Whitby Watch Co., Wilk Watchworks, Worden Watch Studio, ZENEA
 
-SWITZERLAND: A. Lange & Söhne, Alpina, Arnold & Son, Audemars Piguet, Ball, Baume et Mercier,
-Blancpain, Breguet, Breitling, Carl F. Bucherer, Cartier, Certina, Chopard, Christiaan Van Der Klaauw,
-Christopher Ward, Chronoswiss, Concord, Corum, Czapek & Cie, Doxa, Ebel, Eterna, Fortis,
-Franck Muller, Frédérique Constant, Girard Perregaux, H. Moser & Cie., Hamilton, Hautlence,
-Hublot, HYT, IWC Schaffhausen, Jaeger-LeCoultre, Jaquet Droz, Laurent Ferrier, Longines,
-Louis Erard, Luminox, Maurice Lacroix, MB&F, Mido, Mondaine, Montblanc, Norqain, Omega,
-Oris, Panerai, Parmigiani Fleurier, Patek Philippe, Piaget, Rado, Raymond Weil,
-Richard Mille, Rolex, Swatch, TAG Heuer, Tissot, Tudor, Ulysse Nardin, Vacheron Constantin,
-Victorinox, Vulcain, Zenith
+CHINA: Agelocer, Lucky Harvey
 
-GERMANY: A. Lange & Söhne, Glashütte Original, Hanhart, Iron Annie, Junghans, Junkers,
-Laco, MeisterSinger, Montblanc, Nomos Glashütte, Sinn Spezialuhren, Union Glashütte, Zeppelin
+DENMARK: Arcanaut, AV86, Bering
 
-JAPAN: Casio, Citizen, G-Shock, Grand Seiko, Oceanus, Seiko
+ENGLAND: BVOR
 
-FRANCE: Bell & Ross, Cartier, Chaumet, Hermès, Lip, Louis Moinet
-
-UNITED STATES: Accutron, Bulova, Fossil, Hamilton, Invicta, Marathon, MVMT, Shinola, Timex
-
-UNITED KINGDOM: Bremont, Christopher Ward, Fears Bristol
-
-DENMARK: Bering, Skagen
-
-ITALY: Panerai, U-Boat, Locman
-
-AUSTRALIA: RZE
-
-SPAIN: Festina
+FRANCE: Abordage, Arilus, Auricoste, Awake, Baltic, BeauBleu, Bohen, Bouveret, Briston, Carlingue,
+Charlie Paris, Charriol, Clyda, Depancel, Elgé, Eska, Fob Paris, Gustave & Cie, Hegid, Herbelin,
+Hermès, Jacques Bianchi, Kelton, Lip, March Lab, Mona, Montignac, Nepto, Pequignet, Pierre Lannier,
+Reservoir, Serica, Space One, SYE, Trilobe, Van Cleef & Arpels, Yema
 
 GEORGIA: Tsikolia
 
-NORWAY: Straum
+GERMANY: Adidas, Bruno Sohnle, Circula, Glashütte Original, Hanhart, Iron Annie, Junghans, Junkers,
+Laco, MeisterSinger, Nomos Glashütte, Paul Hewitt, Sinn Spezialuhren, Thomas Sabo, Union Glashütte, Zeppelin
 
-GREECE: Sphaera
+GREECE: Stil Timepieces
+
+HONG KONG: DIY Watch Club, Electra, Link2Care, Nubeo, OVD, Schaefer & Companions, Tsar Bomba, Undone
+
+INDIA: Jaipur Watch Company, Delhi Watch Company
+
+ITALY: Bvlgari, Eberhard, Echo Neutra, Deadwood, Fathers, Ferragamo, Furla, Locman, Maserati,
+Missoni, Naga, Police, Sicis Jewels, U-Boat, Verdure, Versace
+
+JAPAN: Campanola, Casio, Citizen, G-Shock, Grand Seiko, KNIS, Minase, Oceanus, Seiko, Watches of Japan
+
+NETHERLANDS: Cluse, Grone, Grönefeld
+
+NORWAY: Aigi, Micromilspec, Straum, Von Doren
+
+PUERTO RICO: Geo Shop
+
+SINGAPORE: Etien, Feynman, Mondaine Group Singapore, RZE, Ubiq, Vario
+
+SPAIN: Calypso, Festina, Lotus
+
+SWEDEN: Filippa K/Rosenbusch, Daniel Wellington, Kronaby
+
+SWITZERLAND: Abordage Horlogerie, Aerowatch, Alpina, Angelus, Anonimo, Appella, AquaStar, Armin Strom,
+Arnold & Son, Atlantic, Audemars Piguet, Backes-Strauss, Ball, Balmain, Baume et Mercier, Bell & Ross,
+Berney, Blackout Concept, Blancpain, Bomberg, Breguet, Breitling, Calvin Klein, Carl F. Bucherer,
+Cartier, Certina, Chanel, Chopard, Christiaan Van Der Klaauw, Chronoswiss, Cimier, Claude Bernard,
+Claude Meylan, Concord, Corum, Cyrus Genève, Czapek & Cie, David Van Heim, Delma, Dior, Direnzo,
+Doxa, Ebel, Edox, Epos, Eterna, Exaequo, Farer, Ferdinand Berthoud, Formex, Fortis, Franck Muller,
+Frédérique Constant, Furlan Marri, Gallet, Gerald Charles, Gerald Genta, Girard Perregaux,
+Glashütte Original, Glycine, Graham, Gucci, H. Moser & Cie., Hamilton, Harry Winston, Hautlence,
+Hublot, Hysek, HYT, IWC Schaffhausen, Jaeger-LeCoultre, Jaguar, Jaquet Droz, Jowissa, Kross Studio,
+Laurent Ferrier, Longines, Louis Erard, Louis Moinet, Luminox, M+Watch, Marvin, Mathey-Tissot,
+Maurice de Mauriac, Maurice Lacroix, MB&F, MeisterSinger, Mido, Mondaine, Montblanc, Montres Etoile,
+Movado, Mühle Glashütte, Nivada Grenchen, Nomos Glashütte, Norqain, Oris, Officine Panerai,
+Parmigiani Fleurier, Patek Philippe, Philipp Plein, Piaget, Pierre Kunz, Pilo & Co Genève,
+Plein Sport, Rado, Raymond Weil, Richard Mille, Roamer, Roger Dubuis, Rolex, Rosenbusch,
+Rudis Sylva, Solar Aqua, Speake Marin, Swatch, Swiss Military Hanowa, Swiss Watch Co.,
+TAG Heuer, Tiffany & Co., Timeless, Tissot, Titoni, Trauffer, Trilobe, Tudor, Tweed Co.,
+Ulysse Nardin, Universal Genève, Urwerk, Vacheron Constantin, Vanguart, Ventura, Victorinox,
+Vulcain, Wancher, Wenger, Zenith, Zodiac
+
+TAIWAN: Havaan Tuvali
+
+THAILAND: Wise
+
+UNITED KINGDOM: anOrdain, Arken, AVI-8, Beaucroft, Bremont, Christopher Ward, Clemence,
+Duckworth Prestex, Elliot Brown, Escudo, Fears Bristol, Isotope, Le Coc, Mezei,
+Olivia Burton, Paulin, Selten, Studio Underd0g, Ted Baker
+
+UNITED STATES OF AMERICA: (A)LT|SYM, Abingdon, Ares, Benrus, Brew Watch Co, Bulova, Coach,
+Colorado, Compass, Core Timepieces, DKNY, Dufrane, Farr + Swit, Fossil, Garmin, GC, Good+evil,
+Guess, Haim, Hampden, Invicta, Jack Mason, Jacob & Co, Kate Spade, Kirkland, Michael Kors,
+Michele, MVMT, Nautica, Nodus, Shinola, Skagen, Stella, S. Coifman, Timex, Tommy Hilfiger,
+Tory Burch, Traum, Vaer, Verdure, Vero Batch Company, Vortic, Watchcraft
 
 Note: When asked about brands from a country, list from the relevant section above and link each one.
 """
@@ -431,12 +474,12 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - If no watches match the requested feature, say so honestly rather than recommending ones that don't match.
 
 === BRANDS ===
-- ONLY use facts from WEBSITE CONTENT for every brand. NEVER use your training knowledge to fill in founding dates, founders, countries, stories, or any other brand facts.
-- Every brand you mention MUST have a link. Use the URL pattern: https://watchdna.com/blogs/history/[brand-slug] (e.g. Cartier → https://watchdna.com/blogs/history/cartier, Rolex → https://watchdna.com/blogs/history/rolex). If the brand has no history page, link to https://watchdna.com/pages/brands-dna
-- If a brand is not in WEBSITE CONTENT at all, say it's not currently on WatchDNA and link to https://watchdna.com/pages/brands-dna
-- If WEBSITE CONTENT has no detail about a brand beyond its products, say "I don't have detailed background info on this brand yet" — never invent facts.
-- When asked about brands from a specific country, use BRANDS BY COUNTRY data — it has the confirmed list.
-- When asked about brand groups (Casio Group, Swatch Group, LVMH etc.) always add: "You can explore all brand groups at [Brand Groups](https://watchdna.com/pages/groups)"
+- Brand history pages in WEBSITE CONTENT contain the real facts: description, FOUNDED year, HEADQUARTERS location, WEBSITE, and timeline. ALWAYS use this scraped data — it overrides your training knowledge.
+- NEVER contradict what the scraped page says. If the page says "HEADQUARTERS: Tennessee, USA" use that. If it says "FOUNDED: 2014" use that.
+- Every brand MUST have a link: [Brand Name](https://watchdna.com/blogs/history/[slug]). Examples: Rolex → /blogs/history/rolex, TAG Heuer → /blogs/history/tag-heuer, Glock Watches → /blogs/history/glock-watches.
+- If a brand is not in WEBSITE CONTENT, say it's not on WatchDNA yet and link to https://watchdna.com/pages/brands-dna
+- When asked about brands from a specific country, use BRANDS BY COUNTRY data.
+- When asked about brand groups link to their history page: [Group Name](https://watchdna.com/blogs/history/[slug]). Also add: "You can explore all brand groups at [Brand Groups](https://watchdna.com/pages/groups)"
 
 BRAND LINKS:
 {brand_links}
