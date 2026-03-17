@@ -72,8 +72,8 @@ PRIORITY_PATHS = [
 
 # GraphQL query — @inContext(country: $country) gives real local prices
 PRODUCTS_QUERY = """
-query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $country) {
-  collection(handle: "watches") {
+query GetProducts($cursor: String, $country: CountryCode!, $handle: String!) @inContext(country: $country) {
+  collection(handle: $handle) {
     products(first: 50, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
@@ -110,6 +110,14 @@ query GetProducts($cursor: String, $country: CountryCode!) @inContext(country: $
 
 def storefront_fetch_all_products(market):
     """Fetch all products for a market using Storefront API with correct local pricing."""
+    all_products = []
+    for collection_handle in ["watches", "accessories"]:
+        all_products.extend(_fetch_collection(market, collection_handle))
+    return all_products
+
+
+def _fetch_collection(market, collection_handle):
+    """Fetch all products from a single collection for a market."""
     if not STOREFRONT_TOKEN:
         raise RuntimeError(
             "SHOPIFY_STOREFRONT_TOKEN env var not set.\n"
@@ -127,7 +135,7 @@ def storefront_fetch_all_products(market):
     page = 1
 
     while True:
-        variables = {"country": market["country"], "cursor": cursor}
+        variables = {"country": market["country"], "cursor": cursor, "handle": collection_handle}
         resp = requests.post(
             STOREFRONT_URL,
             json={"query": PRODUCTS_QUERY, "variables": variables},
@@ -366,58 +374,85 @@ def scrape_articles():
 
 
 def scrape_brand_pages() -> list:
-    """Fetch all brand history pages from /blogs/history using Shopify blog API."""
+    """Fetch all brand history pages by discovering slugs from the Shopify sitemap."""
     brand_pages = []
     seen = set()
-    print("\n🏷️  Fetching brand history pages...")
+    print("\n🏷️  Fetching brand history pages via sitemap...")
 
-    page = 1
-    while page <= 20:
+    # Shopify exposes a sitemap at /sitemap.xml with child sitemaps per blog
+    sitemap_urls = []
+    try:
+        resp = requests.get(f"{BASE_URL}/sitemap.xml", headers=BASE_HEADERS, timeout=12)
+        if resp.status_code == 200:
+            # Find blog sitemap entries
+            for line in resp.text.split("\n"):
+                if "sitemap_blogs" in line or "blogs" in line:
+                    import re as _re
+                    urls = _re.findall(r'<loc>(https?://[^<]+)</loc>', line)
+                    sitemap_urls.extend(urls)
+            # Also try direct blog sitemap
+            sitemap_urls.append(f"{BASE_URL}/blogs/history/sitemap.xml")
+    except Exception as e:
+        print(f"  Sitemap error: {e}")
+
+    # Try the blog sitemap directly
+    history_slugs = set()
+    for sitemap_url in sitemap_urls:
         try:
-            api_url = f"{BASE_URL}/blogs/history.json?limit=50&page={page}"
-            resp = requests.get(api_url, headers=BASE_HEADERS, timeout=12)
-            if resp.status_code != 200:
-                break
-            articles = resp.json().get("articles", [])
-            if not articles:
-                break
-            for post in articles:
-                handle = post.get("handle", "")
-                if not handle:
-                    continue
-                brand_url = f"{BASE_URL}/blogs/history/{handle}"
-                if brand_url in seen:
-                    continue
-                seen.add(brand_url)
+            resp = requests.get(sitemap_url, headers=BASE_HEADERS, timeout=12)
+            if resp.status_code == 200:
+                import re as _re
+                for url in _re.findall(r'<loc>(https?://[^<]+)</loc>', resp.text):
+                    if "/blogs/history/" in url:
+                        history_slugs.add(url.split("?")[0])
+        except Exception:
+            pass
 
-                # Fetch the actual page for full content
-                try:
-                    page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=12)
-                    if page_resp.status_code == 200:
-                        soup = BeautifulSoup(page_resp.text, "html.parser")
-                        # Remove nav/header/footer noise
-                        for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
-                            tag.decompose()
-                        text = soup.get_text(separator="\n", strip=True)
-                        # Clean up blank lines
-                        lines = [l for l in text.split("\n") if l.strip()]
-                        clean = "\n".join(lines)
-                        title = post.get("title", handle)
-                        brand_pages.append({
-                            "url": brand_url,
-                            "title": title,
-                            "content": clean[:5000],
-                        })
-                        print(f"  ✓ {title}")
-                except Exception as e:
-                    print(f"  ✗ {brand_url}: {e}")
-
-            if len(articles) < 50:
+    # Also try the article API with different handles that Shopify sometimes uses
+    for api_handle in ["history", "brand-history", "brands"]:
+        for pg in range(1, 10):
+            try:
+                api_url = f"{BASE_URL}/blogs/{api_handle}.json?limit=50&page={pg}"
+                resp = requests.get(api_url, headers=BASE_HEADERS, timeout=10)
+                if resp.status_code != 200:
+                    break
+                posts = resp.json().get("articles", [])
+                if not posts:
+                    break
+                for post in posts:
+                    handle = post.get("handle","")
+                    if handle:
+                        history_slugs.add(f"{BASE_URL}/blogs/history/{handle}")
+                if len(posts) < 50:
+                    break
+            except Exception:
                 break
-            page += 1
+
+    print(f"  Found {len(history_slugs)} brand URLs to fetch")
+
+    for brand_url in sorted(history_slugs):
+        if brand_url in seen:
+            continue
+        seen.add(brand_url)
+        try:
+            page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=12)
+            if page_resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(page_resp.text, "html.parser")
+            for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
+                tag.decompose()
+            lines = [l for l in soup.get_text(separator="\n", strip=True).split("\n") if l.strip()]
+            clean = "\n".join(lines)
+            title = soup.title.string.strip() if soup.title else brand_url
+            title = title.replace(" – WatchDNA","").replace(" - WatchDNA","").strip()
+            brand_pages.append({
+                "url": brand_url,
+                "title": title,
+                "content": clean[:5000],
+            })
+            print(f"  ✓ {title}")
         except Exception as e:
-            print(f"  ✗ history blog page {page}: {e}")
-            break
+            print(f"  ✗ {brand_url}: {e}")
 
     print(f"  ✅ {len(brand_pages)} brand pages scraped")
     return brand_pages
