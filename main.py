@@ -310,6 +310,11 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 - Format: [Product Name](url) — {symbol}X.XX {currency}
 - Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
+=== ACCESSORIES ===
+- When asked about watch accessories (cases, winders, straps, boxes etc.) link to: [Watch Accessories](https://watchdna.com/collections/accessories)
+- If there are accessory products in WEBSITE CONTENT, recommend them with price and link.
+- Accessories are currency-specific just like watches — only show ones matching the user's currency.
+
 WATCH RECOMMENDATION FLOW — CRITICAL:
 - If the user asks for watch recommendations and has NOT specified a currency in this conversation, ALWAYS ask first:
   "Which market would you like recommendations in? 🌍 CAD, USD, GBP, CHF, or EUR?"
@@ -329,6 +334,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - If a brand is not in WEBSITE CONTENT at all, say it's not currently on WatchDNA and link to https://watchdna.com/pages/brands-dna
 - If WEBSITE CONTENT has no detail about a brand beyond its products, say "I don't have detailed background info on this brand yet" — never invent facts.
 - NEVER describe a brand as Canadian, Swiss, German etc. unless WEBSITE CONTENT explicitly says so.
+- When asked about brand groups (Casio Group, Swatch Group, LVMH etc.) always add: "You can explore all brand groups at [Brand Groups](https://watchdna.com/pages/groups)"
 
 BRAND LINKS:
 {brand_links}
@@ -351,9 +357,8 @@ BRAND LINKS:
 - Format: [Full Name](their-individual-url) — Role/bio
 
 === STORE LOCATOR ===
-- Step 1: No brand → "Which brand are you looking for?"
-- Step 2: Brand, no location → "What's your postal code or city?"
-- Step 3: Both → give filtered link from STORE LOCATOR LINKS, tell them to type postal code in the map search bar.
+- Always immediately give this link: [Find a Store](https://watchdna.com/tools/storelocator)
+- No need to ask for brand or location — just give the link and tell them to search on the map.
 
 KEY PAGES:
 - All Watches: https://watchdna.com/collections/watches
@@ -471,16 +476,7 @@ async def chat(req: ChatRequest):
 
     store_hint = ""
     if is_store_query:
-        if brand_match and req.location:
-            store_hint = (
-                f"\n\nNOTE: Give user filtered map link: "
-                f"[{brand_match['name']} Dealers Near You]({brand_match['url']}) "
-                f"Tell them to type '{req.location}' in the search bar on the map."
-            )
-        elif brand_match:
-            store_hint = "\n\nNOTE: Ask user for their postal code or city."
-        else:
-            store_hint = "\n\nNOTE: Ask user which brand they're looking for."
+        store_hint = "\n\nNOTE: Give user the store locator link directly: [Find a Store](https://watchdna.com/tools/storelocator) — tell them to search by brand or city on the map."
 
     # Most expensive — computed in backend, not guessed by AI
     expensive_hint = ""
