@@ -1,6 +1,0 @@
-fastapi
-uvicorn[standard]
-openai
-requests
-beautifulsoup4
-pydantic
