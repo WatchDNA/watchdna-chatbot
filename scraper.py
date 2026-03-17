@@ -487,14 +487,13 @@ def scrape_brand_pages() -> list:
 
     print(f"  Found {len(history_slugs)} brand URLs to fetch")
 
-    for brand_url in sorted(history_slugs)[:300]:  # cap at 300 to avoid timeout
-        if brand_url in seen:
-            continue
-        seen.add(brand_url)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def fetch_brand(brand_url):
         try:
-            page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=8)
+            page_resp = requests.get(brand_url, headers=BASE_HEADERS, timeout=6)
             if page_resp.status_code != 200:
-                continue
+                return None
             soup = BeautifulSoup(page_resp.text, "html.parser")
             for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
                 tag.decompose()
@@ -502,81 +501,20 @@ def scrape_brand_pages() -> list:
             clean = "\n".join(lines)
             title = soup.title.string.strip() if soup.title else brand_url
             title = title.replace(" – WatchDNA","").replace(" - WatchDNA","").strip()
-            brand_pages.append({
-                "url": brand_url,
-                "title": title,
-                "content": clean[:5000],
-            })
-            print(f"  ✓ {title}")
-        except Exception as e:
-            print(f"  ✗ {brand_url}: {e}")
+            return {"url": brand_url, "title": title, "content": clean[:5000]}
+        except Exception:
+            return None
+
+    urls_to_fetch = [u for u in sorted(history_slugs) if u not in seen]
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_brand, url): url for url in urls_to_fetch}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                brand_pages.append(result)
 
     print(f"  ✅ {len(brand_pages)} brand pages scraped")
     return brand_pages
-
-
-def scrape_site():
-    visited = set()
-    domain = urlparse(BASE_URL).netloc
-    to_visit = [BASE_URL + p for p in PRIORITY_PATHS]
-    pages = []
-    print("\n🌐 Scraping site pages...")
-    while to_visit and len(visited) < MAX_SITE_PAGES:
-        url = to_visit.pop(0).split("#")[0].split("?")[0].rstrip("/") or BASE_URL
-        if url in visited:
-            continue
-        visited.add(url)
-        try:
-            resp = requests.get(url, headers=BASE_HEADERS, timeout=12)
-            if resp.status_code != 200 or "text/html" not in resp.headers.get("Content-Type", ""):
-                continue
-            soup = BeautifulSoup(resp.text, "html.parser")
-            text = get_text(soup)
-            title = soup.title.string.strip() if soup.title else url
-            # Give brands-dna a much higher limit since it has lots of brand entries
-            limit = 20000 if "brands-dna" in url else 3500
-            if len(text) > 150:
-                pages.append({"url": url, "title": title, "content": text[:limit]})
-                print(f"  ✓ [{len(pages)}] {title[:60]}")
-            for a in soup.find_all("a", href=True):
-                href = urljoin(BASE_URL, a["href"]).split("#")[0].split("?")[0]
-                if urlparse(href).netloc == domain and href not in visited and href not in to_visit:
-                    to_visit.append(href)
-        except Exception as e:
-            print(f"  ✗ {url}: {e}")
-    return pages
-
-
-def main():
-    print(f"WatchDNA Scraper — {datetime.now(timezone.utc).isoformat()}")
-    products = scrape_products()
-    articles = scrape_articles()
-    brand_pages = scrape_brand_pages()
-    pages = scrape_site()
-    # Merge brand pages — override any existing /blogs/history/ entries from site crawl
-    existing_urls = {p["url"] for p in pages}
-    for bp in brand_pages:
-        if bp["url"] not in existing_urls:
-            pages.append(bp)
-
-    all_entries = products + articles + pages
-    print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
-
-    with open("knowledge_base.json", "w", encoding="utf-8") as f:
-        json.dump({
-            "scraped_at": datetime.now(timezone.utc).isoformat(),
-            "base_url": BASE_URL,
-            "product_count": len(products),
-            "article_count": len(articles),
-            "page_count": len(pages),
-            "pages": all_entries,
-        }, f, indent=2, ensure_ascii=False)
-
-    print("Saved knowledge_base.json ✓")
-
-
-if __name__ == "__main__":
-    main()
 
 
 def scrape_site():
