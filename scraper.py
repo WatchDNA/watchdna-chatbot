@@ -40,7 +40,7 @@ MARKETS = [
     {"currency": "EUR", "symbol": "€",    "country": "FR"},
 ]
 
-BLOG_HANDLES = ["watch-enthusiast", "press"]
+BLOG_HANDLES = ["watch-enthusiast", "press", "history"]
 
 # Products that appear in collection API but are not real active listings
 BLOCKED_HANDLES = {
@@ -56,7 +56,7 @@ PRIORITY_PATHS = [
     "/pages/platforms", "/pages/committee", "/pages/dailyroutine",
     "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
     "/pages/blogs", "/pages/stories", "/pages/community-reads",
-    "/blogs/press", "/blogs/watch-enthusiast",
+    "/blogs/press", "/blogs/watch-enthusiast", "/blogs/history",
     "/pages/watchesandwonders", "/pages/windupwatchfair",
     "/pages/dubai-watch-week", "/pages/jck",
     "/pages/canadian-watches-jewelry-show", "/pages/coutureshow",
@@ -265,6 +265,7 @@ def scrape_articles():
     BLOG_INFO = {
         "watch-enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
         "press":            {"label": "Press Release", "url_handle": "press"},
+        "history":          {"label": "Brand History", "url_handle": "history"},
     }
 
     for blog_handle in BLOG_HANDLES:
@@ -287,6 +288,8 @@ def scrape_articles():
                     if not node.get("availableForSale", True):
                         continue
                     if handle in BLOCKED_HANDLES:
+                        continue
+                    if price_num == 0:
                         continue
                     article_url = f"{BASE_URL}/blogs/{info['url_handle']}/{handle}"
                     if article_url in seen_urls:
