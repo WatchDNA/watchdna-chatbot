@@ -212,7 +212,10 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
     ])
     is_article_query = any(w in query_lower for w in [
-        "article", "blog", "press", "news", "latest", "recent", "story", "post", "read"
+        "article", "latest article", "recent article", "watch enthusiast"
+    ])
+    is_blog_query = any(w in query_lower for w in [
+        "blog", "latest blog", "recent blog", "story", "stories", "post"
     ])
     is_brand_query = any(w in query_lower for w in [
         "brand", "brands", "about", "history", "founded", "company", "who makes",
@@ -227,12 +230,14 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     if is_accessory_query:
         pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
     elif is_article_query:
-        def article_date(a):
-            for line in a.get("content", "").split("\n"):
-                if line.startswith("Published:"):
-                    return line.replace("Published:", "").strip()
-            return a.get("published", "")
-        pool = sorted(articles, key=article_date, reverse=True) + other_pages
+        # Prioritise watch-enthusiast listing page (has real dates) + individual articles
+        we_listing = [p for p in other_pages if p.get("url","") == "https://watchdna.com/blogs/watch-enthusiast"]
+        we_articles = [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")]
+        pool = we_listing + we_articles + other_pages + articles
+    elif is_blog_query:
+        # Prioritise stories page listing
+        stories_page = [p for p in other_pages if "pages/stories" in p.get("url","")]
+        pool = stories_page + articles + other_pages
     elif is_brand_query:
         # Put brands-dna, history pages, and groups page first
         brand_pages = [p for p in other_pages if any(x in p.get("url","") for x in
@@ -436,12 +441,18 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 BRAND LINKS:
 {brand_links}
 
-=== ARTICLES ===
-- When asked for latest/recent articles, use WEBSITE CONTENT — articles are sorted newest first.
-- Pick the first article with a "Published:" date in its content.
-- Format: [Article Title](url) — Published: YYYY-MM-DD
-- ONLY use the exact "Published:" date from the article content. NEVER invent dates.
-- ONLY use articles with a real /blogs/ URL. NEVER invent titles or URLs.
+=== ARTICLES (watch-enthusiast blog) ===
+- "Article" or "latest article" refers to posts from https://watchdna.com/blogs/watch-enthusiast
+- WEBSITE CONTENT includes the watch-enthusiast LISTING PAGE which shows article titles and real dates like "March 6, 2026"
+- When asked for the latest article: find the watch-enthusiast listing page in WEBSITE CONTENT, read the FIRST article title and date shown, present that one.
+- Format: [Article Title](https://watchdna.com/blogs/watch-enthusiast/[slug]) — Published: Month DD, YYYY
+- Use the date exactly as shown in the listing page. NEVER invent dates.
+
+=== BLOGS (stories page) ===
+- "Blog" or "latest blog" refers to posts from https://watchdna.com/pages/stories
+- These do NOT have dates — just give the first/most recent one listed in WEBSITE CONTENT.
+- Format: [Blog Title](url)
+- NEVER invent dates for stories page blogs.
 
 === TRADESHOWS ===
 - Use the TRADESHOWS DATA below for all tradeshow info and links.
