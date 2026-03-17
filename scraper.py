@@ -368,6 +368,64 @@ def scrape_articles():
     except Exception as e:
         print(f"  ✗ /pages/stories: {e}")
 
+    # Parse blog listing pages to extract real article dates
+    # The listing pages (watch-enthusiast, press) show: "TITLE... March 6, 2026 description"
+    listing_blogs = ["watch-enthusiast", "press", "opendial", "ecosystem", "experts_story",
+                     "watch-enthusiast", "community", "industry-voices", "brand_experiences"]
+    import re as _re
+    # Regex to match month date year patterns
+    date_pattern = _re.compile(
+        r'(January|February|March|April|May|June|July|August|September|October|November|December)'
+        r'\s+(\d{1,2}),?\s+(20\d{2})'
+    )
+    # Build a url->date map from listing pages
+    url_to_date = {}
+    for blog_handle in set(listing_blogs):
+        try:
+            listing_url = f"{BASE_URL}/blogs/{blog_handle}"
+            resp = requests.get(listing_url, headers=BASE_HEADERS, timeout=12)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            # Find all article links with nearby dates
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag.get("href","")
+                if f"/blogs/{blog_handle}/" not in href:
+                    continue
+                full_url = f"{BASE_URL}{href}" if href.startswith("/") else href
+                full_url = full_url.split("?")[0]
+                # Look for a date in nearby text
+                parent = a_tag.find_parent()
+                for _ in range(4):
+                    if parent is None:
+                        break
+                    text = parent.get_text(" ", strip=True)
+                    date_match = date_pattern.search(text)
+                    if date_match:
+                        from datetime import datetime
+                        try:
+                            dt = datetime.strptime(date_match.group(0).replace(",",""), "%B %d %Y")
+                            url_to_date[full_url] = dt.strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
+                        break
+                    parent = parent.find_parent()
+        except Exception as e:
+            print(f"  ✗ listing page {blog_handle}: {e}")
+
+    print(f"  📅 Found dates for {len(url_to_date)} articles from listing pages")
+
+    # Apply dates to articles
+    for article in articles:
+        if not article.get("published") and article["url"] in url_to_date:
+            article["published"] = url_to_date[article["url"]]
+            # Update content to include the date
+            if "Published:" not in article["content"]:
+                article["content"] = article["content"].replace(
+                    f"URL: {article['url']}",
+                    f"URL: {article['url']}\nPublished: {article['published']}"
+                )
+
     articles.sort(key=lambda x: x.get("published", ""), reverse=True)
     print(f"  ✅ {len(articles)} articles")
     return articles
