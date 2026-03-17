@@ -235,9 +235,11 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         we_articles = [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")]
         pool = we_listing + we_articles + other_pages + articles
     elif is_blog_query:
-        # Prioritise stories page listing
+        # Put stories page FIRST and ONLY — it lists articles in correct recency order
         stories_page = [p for p in other_pages if "pages/stories" in p.get("url","")]
-        pool = stories_page + articles + other_pages
+        # Exclude stories blog articles (they are in wrong order) - only use the listing page
+        non_stories_articles = [p for p in articles if p.get("blog","") != "stories"]
+        pool = stories_page + non_stories_articles + other_pages
     elif is_brand_query:
         # Put brands-dna, history pages, and groups page first
         brand_pages = [p for p in other_pages if any(x in p.get("url","") for x in
