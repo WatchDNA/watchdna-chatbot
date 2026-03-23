@@ -254,8 +254,43 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         "movado", "citizen", "bulova", "accutron", "alpina", "bering", "dwiss"
     ])
 
+    # Brand + blog/article combo — e.g. "blogs about Rado", "latest Wolf posts"
+    is_brand_blog_query = (is_blog_query or is_article_query) and is_brand_query
+
     if is_accessory_query:
         pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
+    elif is_brand_blog_query:
+        # Use brand_article_map from KB for exact URL-based article lookup
+        brand_article_map = data.get("brand_article_map", {})
+        # Find which brand slug matches the query by scoring against slug/brand name
+        url_to_article = {p["url"]: p for p in articles}
+        matched_articles = []
+        # Score each slug against the query to find best brand match
+        best_slug = None
+        best_slug_score = 0
+        for slug in brand_article_map:
+            slug_score = sum(1 for w in keywords if w in slug.replace("-", " "))
+            if slug_score > best_slug_score:
+                best_slug_score = slug_score
+                best_slug = slug
+        if best_slug and best_slug_score > 0:
+            for entry in brand_article_map[best_slug]:
+                article = url_to_article.get(entry["url"])
+                if article:
+                    matched_articles.append(article)
+        # Fall back to keyword scoring if no map match
+        if not matched_articles:
+            matched_articles = sorted(
+                [p for p in articles if score(p) > 0],
+                key=lambda p: p.get("published", ""),
+                reverse=True
+            )
+        # Include brand history page for context
+        brand_history = sorted(
+            [p for p in other_pages if score(p) > 0 and "/blogs/history/" in p.get("url", "")],
+            key=score, reverse=True
+        )
+        pool = brand_history + matched_articles + other_pages
     elif is_article_query:
         # Prioritise watch-enthusiast listing page (has real dates) + individual articles
         we_listing = [p for p in other_pages if p.get("url","") == "https://watchdna.com/blogs/watch-enthusiast"]
@@ -279,7 +314,13 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
                        ["/blogs/history/", "brands-dna", "/pages/groups"])]
         rest_pages = [p for p in other_pages if p not in brand_pages]
         keyword_watches = sorted(watches, key=score, reverse=True)[:10]
-        pool = brand_pages + rest_pages + keyword_watches + articles
+        # Include brand-relevant articles sorted newest first
+        brand_articles = sorted(
+            [p for p in articles if score(p) > 0],
+            key=lambda p: p.get("published", ""),
+            reverse=True
+        )
+        pool = brand_pages + rest_pages + keyword_watches + brand_articles
     else:
         if requested_colors:
             # Color search — already pre-filtered, just sort by relevance, no shuffle
@@ -530,11 +571,14 @@ BRAND LINKS:
 - Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
 - NEVER invent titles, authors, dates, or URLs.
 
-=== BRAND ARTICLES (press blog) ===
-- Each brand has press release articles at https://watchdna.com/blogs/press/
-- When asked "give me articles about Rado" or "latest Rado news" — find entries in WEBSITE CONTENT where the URL contains /blogs/press/ and the title mentions that brand.
-- Sort by Published date descending to show newest first.
-- Format: [Article Title](exact-url) — Published: YYYY-MM-DD
+=== BRAND ARTICLES & BLOGS ===
+- When asked "blogs about [brand]", "articles on [brand]", "latest [brand] news/post/blog":
+  - The WEBSITE CONTENT will already contain the correct articles for that brand, pre-matched and sorted newest first.
+  - List ALL articles provided in WEBSITE CONTENT — do NOT filter or skip any of them.
+  - Format each as: [Article Title](exact-url) — Published: YYYY-MM-DD
+  - ONLY use URLs that appear in WEBSITE CONTENT. NEVER construct or guess URLs.
+  - If no articles appear in WEBSITE CONTENT for that brand, say so honestly — do NOT invent articles.
+  - These articles come from both /blogs/watch-enthusiast/ (community posts) and /blogs/press/ (press releases).
 
 === BLOGS (watch-enthusiast) ===
 - "Blog", "latest blog", "blog post", or "latest post" refers to posts from https://watchdna.com/blogs/watch-enthusiast
