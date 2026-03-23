@@ -204,6 +204,19 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
 
     print(f"[LOAD_KNOWLEDGE] currency={currency} | watches={len(watches)} | accessories={len(accessories)} | articles={len(articles)}")
 
+    # Color pre-filter — if user asks for a specific color, only keep watches that mention it
+    COLOR_KEYWORDS = ["red", "blue", "green", "black", "white", "gold", "silver", "brown",
+                      "orange", "yellow", "grey", "gray", "pink", "purple", "bronze", "rose"]
+    requested_colors = [c for c in COLOR_KEYWORDS if c in query_lower]
+    if requested_colors:
+        color_filtered = []
+        for w in watches:
+            text = (w.get("title","") + " " + w.get("content","")).lower()
+            if any(c in text for c in requested_colors):
+                color_filtered.append(w)
+        if color_filtered:  # only apply filter if it actually found matches
+            watches = color_filtered
+
     def score(page):
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
@@ -686,7 +699,28 @@ async def chat(req: ChatRequest):
         max_tokens=450,
         temperature=0.7,
     )
-    return {"reply": response.choices[0].message.content}
+    reply = response.choices[0].message.content
+
+    # Fix lazy "here" links — replace [here](url) and [View here](url) etc. with [Product Title](url)
+    # Build a url->title map from knowledge base
+    kb = get_knowledge_base()
+    if kb:
+        url_to_title = {
+            p["url"]: p["title"]
+            for p in kb.get("pages", [])
+            if p.get("url") and p.get("title")
+        }
+        def fix_here_link(m):
+            link_text = m.group(1).strip().lower()
+            url = m.group(2).strip()
+            lazy_words = {"here", "view here", "check it out", "see here", "read here",
+                          "learn more", "read more", "view", "link", "click here"}
+            if link_text in lazy_words and url in url_to_title:
+                return f"[{url_to_title[url]}]({url})"
+            return m.group(0)
+        reply = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', fix_here_link, reply)
+
+    return {"reply": reply}
 
 
 @app.post("/debug-currency")
