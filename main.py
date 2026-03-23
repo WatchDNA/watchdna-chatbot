@@ -213,17 +213,22 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
 
     print(f"[LOAD_KNOWLEDGE] currency={currency} | watches={len(watches)} | accessories={len(accessories)} | articles={len(articles)}")
 
-    # Color pre-filter — if user asks for a specific color, only keep watches that mention it
+    # Color pre-filter — search Description: and Color: fields with word boundaries
     COLOR_KEYWORDS = ["red", "blue", "green", "black", "white", "gold", "silver", "brown",
                       "orange", "yellow", "grey", "gray", "pink", "purple", "bronze", "rose"]
-    requested_colors = [c for c in COLOR_KEYWORDS if c in query_lower]
+    requested_colors = [c for c in COLOR_KEYWORDS if re.search(r'\b' + c + r'\b', query_lower)]
+
+    def _has_color(page, colors):
+        for line in page.get("content", "").split("\n"):
+            if line.startswith("Description:") or line.startswith("Color:") or line.startswith("Product:"):
+                for c in colors:
+                    if re.search(r'\b' + c + r'\b', line, re.IGNORECASE):
+                        return True
+        return False
+
     if requested_colors:
-        color_filtered = []
-        for w in watches:
-            text = (w.get("title","") + " " + w.get("content","")).lower()
-            if any(c in text for c in requested_colors):
-                color_filtered.append(w)
-        if color_filtered:  # only apply filter if it actually found matches
+        color_filtered = [w for w in watches if _has_color(w, requested_colors)]
+        if color_filtered:
             watches = color_filtered
 
     def score(page):
