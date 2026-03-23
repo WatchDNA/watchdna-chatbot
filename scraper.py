@@ -913,6 +913,24 @@ def main():
     all_entries = products + articles + pages
     print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
 
+    # Build brands_per_market index — which vendors exist in each currency market
+    brands_per_market = {}
+    for p in products:
+        cur = p.get("currency", "")
+        vendor = p.get("title", "")
+        # Extract vendor from content
+        for line in p.get("content", "").split("\n"):
+            if line.startswith("Brand/Vendor:"):
+                vendor = line.replace("Brand/Vendor:", "").strip()
+                break
+        if cur and vendor:
+            if cur not in brands_per_market:
+                brands_per_market[cur] = set()
+            brands_per_market[cur].add(vendor)
+    # Convert sets to sorted lists for JSON serialisation
+    brands_per_market = {k: sorted(v) for k, v in brands_per_market.items()}
+    print("Brands per market:", {k: len(v) for k, v in brands_per_market.items()})
+
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
         json.dump({
             "scraped_at": datetime.now(timezone.utc).isoformat(),
@@ -920,6 +938,7 @@ def main():
             "product_count": len(products),
             "article_count": len(articles),
             "page_count": len(pages),
+            "brands_per_market": brands_per_market,
             "pages": all_entries,
         }, f, indent=2, ensure_ascii=False)
 
