@@ -46,7 +46,6 @@ BLOG_HANDLES = ["watch-enthusiast", "press", "history"]
 BLOCKED_HANDLES = {
     "1513279", "hugo-boss-admiral-watch", "master",
     "calvin-klein-multifunction-rose-gold-plated-day-25200102",
-    "calvin-klein-multifunction-rose-gold-plated-day-25200102",
 }
 
 PRIORITY_PATHS = [
@@ -159,8 +158,6 @@ def _fetch_collection(market, collection_handle):
             currency = price_info["currencyCode"]  # Real currency from Shopify
             symbol = market["symbol"]
             handle = node["handle"]
-            if handle in BLOCKED_HANDLES:
-                continue
             product_url = f"{BASE_URL}/products/{handle}"
 
             # Skip non-watch products
