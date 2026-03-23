@@ -520,18 +520,22 @@ BRAND LINKS:
 
 === ARTICLES (watch-enthusiast blog) ===
 - "Article" or "latest article" refers to posts from https://watchdna.com/blogs/watch-enthusiast
-- WEBSITE CONTENT includes the watch-enthusiast LISTING PAGE which shows article titles and real dates like "March 6, 2026"
-- When asked for the latest article: find the watch-enthusiast listing page in WEBSITE CONTENT, read the FIRST article title and date shown, present that one.
-- Format: [Article Title](https://watchdna.com/blogs/watch-enthusiast/[slug]) — Published: Month DD, YYYY
-- Use the date exactly as shown in the listing page. NEVER invent dates.
+- Find articles in WEBSITE CONTENT with "Article Type: Community Article" — sort by Published date to find the most recent.
+- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
+- NEVER invent titles, authors, dates, or URLs.
+
+=== BRAND ARTICLES (press blog) ===
+- Each brand has press release articles at https://watchdna.com/blogs/press/
+- When asked "give me articles about Rado" or "latest Rado news" — find entries in WEBSITE CONTENT where the URL contains /blogs/press/ and the title mentions that brand.
+- Sort by Published date descending to show newest first.
+- Format: [Article Title](exact-url) — Published: YYYY-MM-DD
 
 === BLOGS (stories page) ===
 - "Blog" or "latest blog" refers to posts from https://watchdna.com/pages/stories
-- The stories page content in WEBSITE CONTENT starts with: "Stories All Our Contributors Watch Enthusiasts" followed immediately by article titles in order of most recent first.
-- The FIRST title after "Watch Enthusiasts" is the latest blog. Right now that is: "STUDIO UNDERD0G BRINGS ITS "AVOCADO" ENERGY TO VANCOUVER" at https://watchdna.com/blogs/opendial/avocado
-- Always check the stories page content for the current first title — it may change after each scrape.
-- Format: [Blog Title](url)
-- NEVER invent dates for stories page blogs.
+- Look in WEBSITE CONTENT for articles with "Blog Page: https://watchdna.com/pages/stories" — these are the stories page posts.
+- Sort by Published date descending to find the most recent one.
+- Format: [Blog Title](url) — Published: YYYY-MM-DD
+- NEVER invent dates.
 
 === TRADESHOWS ===
 - Use the TRADESHOWS DATA below for all tradeshow info and links.
