@@ -242,8 +242,8 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         "article", "latest article", "recent article", "watch enthusiast"
     ])
     is_blog_query = any(w in query_lower for w in [
-        "blog", "latest blog", "recent blog", "story", "stories", "post"
-    ])
+        "blog", "story", "stories", "post", "posted"
+    ]) and not is_article_query
     is_brand_query = any(w in query_lower for w in [
         "brand", "brands", "about", "history", "founded", "company", "who makes",
         "canadian", "swiss", "german", "french", "japanese", "american", "italian",
@@ -262,11 +262,17 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         we_articles = [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")]
         pool = we_listing + we_articles + other_pages + articles
     elif is_blog_query:
-        # Put stories page FIRST and ONLY — it lists articles in correct recency order
+        # Blogs = watch-enthusiast posts, sorted newest first by published date
+        we_listing = [p for p in other_pages if p.get("url","") == "https://watchdna.com/blogs/watch-enthusiast"]
         stories_page = [p for p in other_pages if "pages/stories" in p.get("url","")]
-        # Exclude stories blog articles (they are in wrong order) - only use the listing page
-        non_stories_articles = [p for p in articles if p.get("blog","") != "stories"]
-        pool = stories_page + non_stories_articles + other_pages
+        blog_articles = [p for p in articles if p.get("blog","") in ("watch-enthusiast", "stories")]
+        # Sort by published date descending so AI sees newest first
+        blog_articles_sorted = sorted(
+            blog_articles,
+            key=lambda p: p.get("published", ""),
+            reverse=True
+        )
+        pool = we_listing + stories_page + blog_articles_sorted + other_pages
     elif is_brand_query:
         # Put brands-dna, history pages, and groups page first
         brand_pages = [p for p in other_pages if any(x in p.get("url","") for x in
@@ -530,12 +536,14 @@ BRAND LINKS:
 - Sort by Published date descending to show newest first.
 - Format: [Article Title](exact-url) — Published: YYYY-MM-DD
 
-=== BLOGS (stories page) ===
-- "Blog" or "latest blog" refers to posts from https://watchdna.com/pages/stories
-- Look in WEBSITE CONTENT for articles with "Blog Page: https://watchdna.com/pages/stories" — these are the stories page posts.
-- Sort by Published date descending to find the most recent one.
-- Format: [Blog Title](url) — Published: YYYY-MM-DD
-- NEVER invent dates.
+=== BLOGS (watch-enthusiast) ===
+- "Blog", "latest blog", "blog post", or "latest post" refers to posts from https://watchdna.com/blogs/watch-enthusiast
+- Find blog posts in WEBSITE CONTENT with "Article Type: Community Article (Watch Enthusiast)" — these are the blog posts.
+- Sort by Published date DESCENDING — the highest date (e.g. 2026-03-20) is the most recent.
+- The most recent = the single entry with the largest Published date value.
+- Format: [Blog Title](exact-url) — Published: YYYY-MM-DD
+- NEVER invent titles, dates, or URLs. ONLY use URLs that appear in WEBSITE CONTENT.
+- If asked for the "latest" one, return the single entry with the most recent Published date.
 
 === TRADESHOWS ===
 - Use the TRADESHOWS DATA below for all tradeshow info and links.
