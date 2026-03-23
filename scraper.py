@@ -57,6 +57,17 @@ PRIORITY_PATHS = [
     "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
     "/pages/blogs", "/pages/stories", "/pages/community-reads",
     "/blogs/press", "/blogs/watch-enthusiast", "/blogs/history",
+    # Contributor pages — each has bio + their articles
+    "/pages/brent-robillard", "/pages/cagdas-onen", "/pages/carol-besler",
+    "/pages/colin-potts", "/pages/david-carrington", "/pages/elizabeth-ionson",
+    "/pages/george-sully", "/pages/gianpaolo-mazzotta", "/pages/grigor-garabedian",
+    "/pages/hakim-el-kadiri", "/pages/ian-cognito", "/pages/jacky-ho",
+    "/pages/jeremy-freed", "/pages/mark-fleminger", "/pages/mikhail-gomes",
+    "/pages/nabil-amdan", "/pages/phillip-plimmer", "/pages/roberta-naas",
+    "/pages/sanket-patel", "/pages/sean-shapiro", "/pages/smartwatch-dick",
+    "/pages/spiro-mandylor", "/pages/sevan-khidichian", "/pages/thomas-brissiaud",
+    "/pages/thomas-j-sandrin", "/pages/tyler-horologyobsessed", "/pages/tyler-worden",
+    "/pages/victor-justwatchestv", "/pages/victoria-townsend", "/pages/watchguyglasgow",
     "/pages/watchesandwonders", "/pages/windupwatchfair",
     "/pages/dubai-watch-week", "/pages/jck",
     "/pages/canadian-watches-jewelry-show", "/pages/coutureshow",
@@ -315,7 +326,26 @@ def scrape_articles():
                     if not display_date:
                         display_date = (post.get("updated_at") or post.get("published_at") or "")[:10]
 
-                    author = post.get("author", "") or "WatchDNA"
+                    # Get author - try JSON first, then article HTML meta
+                    author = post.get("author", "").strip()
+                    if not author:
+                        try:
+                            if art_resp.status_code == 200:
+                                art_soup_a = BeautifulSoup(art_resp.text, "html.parser")
+                                # Try meta author tag
+                                meta_author = art_soup_a.find("meta", {"name": "author"})
+                                if meta_author and meta_author.get("content"):
+                                    author = meta_author["content"].strip()
+                                # Try og:article:author
+                                if not author:
+                                    meta_author2 = art_soup_a.find("meta", {"property": "article:author"})
+                                    if meta_author2 and meta_author2.get("content"):
+                                        author = meta_author2["content"].strip()
+                        except Exception:
+                            pass
+                    if not author:
+                        author = "WatchDNA"
+
                     content = (
                         f"Article Type: {info['label']}\n"
                         f"Article: {post.get('title', '')}\n"
