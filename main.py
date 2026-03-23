@@ -92,6 +92,15 @@ def get_most_expensive(currency: str):
     return best
 
 
+def get_brands_for_market(currency: str) -> list:
+    """Return list of vendor names that have products in this currency market."""
+    data = get_knowledge_base()
+    if not data:
+        return []
+    bpm = data.get("brands_per_market", {})
+    return bpm.get(currency.upper(), [])
+
+
 def get_brand_history_links() -> str:
     data = get_knowledge_base()
     if not data:
@@ -261,7 +270,10 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         keyword_watches = sorted(watches, key=score, reverse=True)[:10]
         pool = brand_pages + rest_pages + keyword_watches + articles
     else:
-        if keywords:
+        if requested_colors:
+            # Color search — already pre-filtered, just sort by relevance, no shuffle
+            pool = sorted(watches, key=score, reverse=True) + other_pages + articles
+        elif keywords:
             top = [w for w in sorted(watches, key=score, reverse=True) if score(w) > 0]
             rest = [w for w in watches if score(w) == 0]
             random.shuffle(rest)
@@ -643,6 +655,17 @@ async def chat(req: ChatRequest):
     knowledge = load_knowledge(req.message, currency=currency)
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
+    # Build available brands hint for this market
+    market_brands = get_brands_for_market(currency)
+    brands_hint = ""
+    if market_brands:
+        brands_hint = (
+            f"\n\nAVAILABLE BRANDS IN {currency} MARKET: {', '.join(market_brands)}\n"
+            f"IMPORTANT: ONLY recommend watches from brands in this list. "
+            f"If asked for a brand NOT in this list, say it is not available in the {currency} market "
+            f"and suggest they check another currency or browse https://watchdna.com/collections/watches"
+        )
+
     brand_map = get_brand_map()
     store_links = "\n".join([
         f"- {v['name']}: {v['url']}"
@@ -685,7 +708,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + expensive_hint,
+        knowledge=knowledge + store_hint + expensive_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
