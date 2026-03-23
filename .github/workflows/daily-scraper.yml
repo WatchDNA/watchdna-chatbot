@@ -22,7 +22,7 @@ jobs:
           SHOPIFY_URL: https://watchdna.com
           SHOPIFY_STOREFRONT_TOKEN: ${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}
         run: python scraper.py
-      - name: Commit knowledge base to repo
+     - name: Commit knowledge base to repo
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
@@ -33,4 +33,3 @@ jobs:
           git diff --staged --quiet || git commit -m "Update knowledge base $(date -u '+%Y-%m-%d')"
           git pull --rebase origin main
           git push origin main
-
