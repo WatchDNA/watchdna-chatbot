@@ -235,11 +235,9 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         we_articles = [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")]
         pool = we_listing + we_articles + other_pages + articles
     elif is_blog_query:
-        # Put stories page FIRST and ONLY — it lists articles in correct recency order
+        # Prioritise stories page listing
         stories_page = [p for p in other_pages if "pages/stories" in p.get("url","")]
-        # Exclude stories blog articles (they are in wrong order) - only use the listing page
-        non_stories_articles = [p for p in articles if p.get("blog","") != "stories"]
-        pool = stories_page + non_stories_articles + other_pages
+        pool = stories_page + articles + other_pages
     elif is_brand_query:
         # Put brands-dna, history pages, and groups page first
         brand_pages = [p for p in other_pages if any(x in p.get("url","") for x in
@@ -478,7 +476,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - If no watches match the requested feature, say so honestly rather than recommending ones that don't match.
 
 === BRANDS ===
-- Brand history pages in WEBSITE CONTENT contain the real facts: description, FOUNDED year, HEADQUARTERS location, WEBSITE, and timeline. ALWAYS use this scraped data — scraped data overrides your training knowledge completely.
+- Brand history pages in WEBSITE CONTENT contain the real facts: description, FOUNDED year, HEADQUARTERS location, WEBSITE, and timeline. ALWAYS use this scraped data — it overrides your training knowledge.
 - NEVER contradict what the scraped page says. If the page says "HEADQUARTERS: Tennessee, USA" use that. If it says "FOUNDED: 2014" use that.
 - Every brand MUST have a link: [Brand Name](https://watchdna.com/blogs/history/[slug]). Examples: Rolex → /blogs/history/rolex, TAG Heuer → /blogs/history/tag-heuer, Glock Watches → /blogs/history/glock-watches.
 - If a brand is not in WEBSITE CONTENT, say it's not on WatchDNA yet and link to https://watchdna.com/pages/brands-dna
@@ -497,9 +495,7 @@ BRAND LINKS:
 
 === BLOGS (stories page) ===
 - "Blog" or "latest blog" refers to posts from https://watchdna.com/pages/stories
-- The stories page content in WEBSITE CONTENT starts with: "Stories All Our Contributors Watch Enthusiasts" followed immediately by article titles in order of most recent first.
-- The FIRST title after "Watch Enthusiasts" is the latest blog. Right now that is: "STUDIO UNDERD0G BRINGS ITS "AVOCADO" ENERGY TO VANCOUVER" at https://watchdna.com/blogs/opendial/avocado
-- Always check the stories page content for the current first title — it may change after each scrape.
+- These do NOT have dates — just give the first/most recent one listed in WEBSITE CONTENT.
 - Format: [Blog Title](url)
 - NEVER invent dates for stories page blogs.
 
