@@ -276,10 +276,79 @@ def get_text(soup):
     return " ".join(soup.get_text(separator=" ").split())
 
 
+def fetch_rss_dates() -> dict:
+    """
+    Fetch https://watchdna.com/pages/all-blogs-rss and parse pub dates.
+    Returns a dict of {article_url: "YYYY-MM-DD"} — highest priority date source.
+    Also tries the native Shopify Atom feeds as fallback.
+    """
+    import xml.etree.ElementTree as ET
+    url_to_date = {}
+
+    def parse_feed(text):
+        try:
+            root = ET.fromstring(text)
+            ns = {
+                "atom": "http://www.w3.org/2005/Atom",
+                "dc": "http://purl.org/dc/elements/1.1/",
+            }
+            # RSS 2.0 — <item> with <link> and <pubDate>
+            for item in root.iter("item"):
+                link = item.findtext("link", "").strip()
+                pub = (item.findtext("pubDate", "") or item.findtext("dc:date", "", ns)).strip()
+                if link and pub:
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        dt = parsedate_to_datetime(pub)
+                        url_to_date[link.split("?")[0]] = dt.strftime("%Y-%m-%d")
+                    except Exception:
+                        # Try ISO format
+                        url_to_date[link.split("?")[0]] = pub[:10]
+            # Atom — <entry> with <link href> and <published>/<updated>
+            for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
+                link_el = entry.find("{http://www.w3.org/2005/Atom}link")
+                link = (link_el.get("href", "") if link_el is not None else "").strip()
+                pub = (
+                    (entry.findtext("{http://www.w3.org/2005/Atom}published") or
+                     entry.findtext("{http://www.w3.org/2005/Atom}updated") or "")
+                ).strip()
+                if link and pub:
+                    url_to_date[link.split("?")[0]] = pub[:10]
+        except Exception as e:
+            print(f"    RSS parse error: {e}")
+
+    # 1. Try the custom all-blogs RSS page
+    try:
+        resp = requests.get(f"{BASE_URL}/pages/all-blogs-rss", headers=BASE_HEADERS, timeout=15)
+        if resp.status_code == 200:
+            parse_feed(resp.text)
+            print(f"  📡 all-blogs-rss: {len(url_to_date)} dates")
+    except Exception as e:
+        print(f"  ✗ all-blogs-rss: {e}")
+
+    # 2. Also hit native Shopify Atom feeds for watch-enthusiast and press
+    for handle in ["watch-enthusiast", "press"]:
+        for feed_path in [f"/blogs/{handle}.atom", f"/blogs/{handle}/feed.atom"]:
+            try:
+                resp = requests.get(BASE_URL + feed_path, headers=BASE_HEADERS, timeout=12)
+                if resp.status_code == 200:
+                    before = len(url_to_date)
+                    parse_feed(resp.text)
+                    print(f"  📡 {feed_path}: +{len(url_to_date) - before} dates")
+                    break
+            except Exception:
+                pass
+
+    return url_to_date
+
+
 def scrape_articles():
     articles = []
     seen_urls = set()
     print("\n📰 Fetching articles...")
+
+    # RSS dates are the most reliable source — fetch first, apply at end
+    rss_dates = fetch_rss_dates()
 
     BLOG_INFO = {
         "watch-enthusiast": {"label": "Community Article (Watch Enthusiast)", "url_handle": "watch-enthusiast"},
@@ -312,17 +381,19 @@ def scrape_articles():
                     seen_urls.add(article_url)
                     body = BeautifulSoup(post.get("body_html", "") or "", "html.parser").get_text()
 
-                    # Fetch real date from article HTML meta tag
-                    display_date = ""
-                    try:
-                        art_resp = requests.get(article_url, headers=BASE_HEADERS, timeout=10)
-                        if art_resp.status_code == 200:
-                            art_soup = BeautifulSoup(art_resp.text, "html.parser")
-                            meta = art_soup.find("meta", {"property": "article:published_time"})
-                            if meta and meta.get("content"):
-                                display_date = meta["content"][:10]
-                    except Exception:
-                        pass
+                    # Date priority: RSS feed > HTML meta > JSON API
+                    display_date = rss_dates.get(article_url, "")
+                    art_resp = None
+                    if not display_date:
+                        try:
+                            art_resp = requests.get(article_url, headers=BASE_HEADERS, timeout=10)
+                            if art_resp.status_code == 200:
+                                art_soup = BeautifulSoup(art_resp.text, "html.parser")
+                                meta = art_soup.find("meta", {"property": "article:published_time"})
+                                if meta and meta.get("content"):
+                                    display_date = meta["content"][:10]
+                        except Exception:
+                            pass
                     if not display_date:
                         display_date = (post.get("updated_at") or post.get("published_at") or "")[:10]
 
@@ -330,7 +401,7 @@ def scrape_articles():
                     author = post.get("author", "").strip()
                     if not author:
                         try:
-                            if art_resp.status_code == 200:
+                            if art_resp and art_resp.status_code == 200:
                                 art_soup_a = BeautifulSoup(art_resp.text, "html.parser")
                                 # Try meta author tag
                                 meta_author = art_soup_a.find("meta", {"name": "author"})
@@ -461,15 +532,26 @@ def scrape_articles():
 
     print(f"  📅 Found dates for {len(url_to_date)} articles from listing pages")
 
-    # Apply dates to articles
+    # Apply dates — RSS dates take highest priority and override everything
     for article in articles:
-        if not article.get("published") and article["url"] in url_to_date:
-            article["published"] = url_to_date[article["url"]]
-            # Update content to include the date
+        url = article["url"]
+        # RSS date overrides any previously set date
+        if url in rss_dates:
+            article["published"] = rss_dates[url]
+        elif not article.get("published") and url in url_to_date:
+            article["published"] = url_to_date[url]
+        # Keep content in sync with final date
+        if article.get("published"):
+            import re as _re2
+            article["content"] = _re2.sub(
+                r"Published: [^\n]*",
+                f"Published: {article['published']}",
+                article["content"]
+            )
             if "Published:" not in article["content"]:
                 article["content"] = article["content"].replace(
-                    f"URL: {article['url']}",
-                    f"URL: {article['url']}\nPublished: {article['published']}"
+                    f"URL: {url}",
+                    f"URL: {url}\nPublished: {article['published']}"
                 )
 
     articles.sort(key=lambda x: x.get("published", ""), reverse=True)
