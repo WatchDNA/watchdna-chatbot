@@ -28,6 +28,24 @@ ACCESSORY_TYPES = {
 }
 
 
+PREMIUM_BRANDS = {
+    "rolex", "patek philippe", "audemars piguet", "vacheron constantin",
+    "a. lange & söhne", "a lange sohne", "richard mille", "fp journe",
+    "jaeger-lecoultre", "jaeger lecoultre", "iwc", "iwc schaffhausen",
+    "breguet", "blancpain", "glashütte original", "glashutte original",
+    "chopard", "hublot", "tag heuer", "omega", "tudor", "breitling",
+    "cartier", "panerai", "zenith", "longines", "rado", "tissot",
+    "hamilton", "oris", "nomos", "nomos glashütte", "grand seiko",
+    "mb&f", "urwerk", "h. moser", "h moser", "f.p. journe",
+    "ulysse nardin", "girard perregaux", "piaget", "roger dubuis",
+    "bell & ross", "bell and ross", "baume et mercier", "frederique constant",
+    "frédérique constant", "alpina", "norqain", "certina", "mido",
+    "raymond weil", "movado", "montblanc", "ebel", "eterna",
+    "doxa", "tudor", "fortis", "sinn", "junghans", "stowa", "laco",
+    "seiko", "grand seiko", "citizen", "orient"
+}
+
+
 def _is_accessory(page: dict) -> bool:
     content = page.get("content", "")
     # Check Type field
@@ -320,20 +338,38 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
             key=lambda p: p.get("published", ""),
             reverse=True
         )
-        pool = brand_pages + rest_pages + keyword_watches + brand_articles
+        # Always append some recent articles even if no keyword match, for related reading
+        fallback_articles = sorted(
+            [p for p in articles if p not in brand_articles and p.get("blog") in ("watch-enthusiast", "press")],
+            key=lambda p: p.get("published", ""),
+            reverse=True
+        )[:5]
+        pool = brand_pages + rest_pages + keyword_watches + brand_articles + fallback_articles
     else:
+        def premium_score(page):
+            vendor = ""
+            for line in page.get("content", "").split("\n"):
+                if line.startswith("Brand/Vendor:"):
+                    vendor = line.replace("Brand/Vendor:", "").strip().lower()
+                    break
+            return 1 if vendor in PREMIUM_BRANDS else 0
+
         if requested_colors:
-            # Color search — already pre-filtered, just sort by relevance, no shuffle
-            pool = sorted(watches, key=score, reverse=True) + other_pages + articles
+            scored = sorted(watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
+            pool = scored + other_pages + articles
         elif keywords:
-            top = [w for w in sorted(watches, key=score, reverse=True) if score(w) > 0]
+            top = [w for w in watches if score(w) > 0]
             rest = [w for w in watches if score(w) == 0]
+            # Within top matches: premium brands first, then by keyword score
+            top_sorted = sorted(top, key=lambda p: (premium_score(p), score(p)), reverse=True)
             random.shuffle(rest)
-            pool = top + rest + other_pages + articles
+            pool = top_sorted + rest + other_pages + articles
         else:
-            shuffled = watches[:]
-            random.shuffle(shuffled)
-            pool = shuffled + other_pages + articles
+            # No keywords: premium first, rest shuffled
+            premium = [w for w in watches if premium_score(w) == 1]
+            non_premium = [w for w in watches if premium_score(w) == 0]
+            random.shuffle(non_premium)
+            pool = premium + non_premium + other_pages + articles
 
     context = ""
     for page in pool:
@@ -546,6 +582,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
   "Which market would you like recommendations in? 🌍 CAD, USD, GBP, CHF, or EUR?"
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
 - NEVER recommend watches from a different currency than what was asked — the same watch has different entries per market and only the correct one will work.
+- PREMIUM BRANDS FIRST: When recommending watches, always lead with premium/luxury brands (Rolex, Omega, TAG Heuer, Breitling, IWC, Cartier, Patek Philippe, Audemars Piguet, Hublot, Tudor, Longines, Rado, Tissot, Hamilton, Seiko Grand Seiko, Oris, Nomos, etc.) before entry-level or fashion brands — as long as they match the user's request and budget.
 - When the user asks for watches by feature (movement, case size, style, color, material etc.) ONLY recommend watches whose Features section in WEBSITE CONTENT matches. Examples:
   - "automatic movement" → only watches with "Movement: Automatic" in Features
   - "chronograph" → only watches with "Styles: Chronograph" in Features (NOT just mentioned in description)
@@ -589,10 +626,23 @@ BRAND LINKS:
 - NEVER invent titles, dates, or URLs. ONLY use URLs that appear in WEBSITE CONTENT.
 - If asked for the "latest" one, return the single entry with the most recent Published date.
 
+=== RELATED ARTICLES ===
+- Whenever you answer a question about a brand, a watchmaking topic, a watch style, or horology in general — after your main answer, append a short "📖 Related reading:" section listing 2–3 relevant articles from WEBSITE CONTENT.
+- Only include articles that genuinely relate to the topic. Use exact URLs from WEBSITE CONTENT.
+- Format: [Article Title](exact-url)
+- If no related articles exist in WEBSITE CONTENT, skip this section entirely — do not force it.
+
+=== WHEN YOU DON'T HAVE THE ANSWER ===
+- If WEBSITE CONTENT does not contain enough information to answer the question (e.g. upcoming tradeshow dates, external event schedules, general horology facts not on the site), do NOT make up an answer.
+- Instead say: "I don't have that info on WatchDNA right now. Want me to answer using my general AI knowledge? Just say **yes** and I'll do my best! 🤖"
+- Never say "I don't know" without offering the fallback.
+- Once the user says yes (or any affirmative), the system will automatically use general AI knowledge to answer.
+
 === TRADESHOWS ===
 - Use the TRADESHOWS DATA below for all tradeshow info and links.
 - Follow the HOW TO ANSWER rule: pick one and describe it conversationally unless user asks for the full list.
 - Never invent tradeshow names or URLs.
+- If asked about specific dates or schedules not in TRADESHOWS DATA, trigger the "don't have the answer" flow above.
 
 === AWARDS ===
 - Use the AWARDS DATA below for all award info and links.
@@ -645,6 +695,7 @@ class ChatRequest(BaseModel):
     history: list = []
     location: str = ""
     currency: str = "CAD"
+    gpt_fallback_confirmed: bool = False
 
 
 def detect_currency_in_text(text: str) -> str | None:
@@ -709,17 +760,60 @@ def resolve_currency(req: "ChatRequest") -> str:
     return "CAD"
 
 
+GPT_FALLBACK_PROMPT = """You are WatchBot, a knowledgeable watch enthusiast assistant for WatchDNA.com.
+The user has requested a general AI answer because the WatchDNA knowledge base didn't have this information.
+Answer helpfully and conversationally about watches, horology, tradeshows, events, or whatever they asked.
+Be honest that this is general knowledge, not WatchDNA-specific data.
+Where relevant, suggest they explore https://watchdna.com for community articles and watch listings.
+Never make up prices, dates, or product URLs."""
+
+GPT_FALLBACK_TRIGGERS = {
+    "yes", "yeah", "sure", "ok", "okay", "yep", "yup", "go ahead",
+    "please", "do it", "use chatgpt", "use gpt", "yes please", "absolutely"
+}
+
+def _is_gpt_fallback_confirmation(message: str, history: list) -> bool:
+    """Return True if the user just confirmed they want the GPT fallback."""
+    msg_lower = message.strip().lower().rstrip("!.,?")
+    if msg_lower not in GPT_FALLBACK_TRIGGERS:
+        return False
+    # Check the previous assistant message offered the fallback
+    for h in reversed(history):
+        if h.get("role") == "assistant":
+            prev = h.get("content", "").lower()
+            return "general ai knowledge" in prev or "use chatgpt" in prev or "chatgpt" in prev
+    return False
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     currency = resolve_currency(req)
     print(f"[CURRENCY DETECTED] {currency} | message: {req.message[:60]}")
 
+    # --- GPT FALLBACK PATH ---
+    use_fallback = (
+        req.gpt_fallback_confirmed
+        or _is_gpt_fallback_confirmation(req.message, req.history)
+    )
+    if use_fallback:
+        print("[GPT_FALLBACK] Answering without KB")
+        messages = [{"role": "system", "content": GPT_FALLBACK_PROMPT}]
+        for h in req.history[-8:]:
+            messages.append(h)
+        messages.append({"role": "user", "content": req.message})
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=500,
+            temperature=0.7,
+        )
+        return {"reply": response.choices[0].message.content, "used_gpt_fallback": True}
+
+    # --- NORMAL KB PATH ---
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
-    # load_knowledge filters pages by page["currency"] == currency exactly
     knowledge = load_knowledge(req.message, currency=currency)
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
-    # Build available brands hint for this market
     market_brands = get_brands_for_market(currency)
     brands_hint = ""
     if market_brands:
@@ -736,7 +830,6 @@ async def chat(req: ChatRequest):
         for k, v in brand_map.items() if k == v["name"].lower()
     ])
 
-    # Store locator hints
     history_text = " ".join([h.get("content", "") for h in req.history[-6:]])
     brand_match = find_brand_in_query(req.message) or find_brand_in_query(history_text)
     is_store_query = any(w in req.message.lower() for w in [
@@ -748,7 +841,6 @@ async def chat(req: ChatRequest):
     if is_store_query:
         store_hint = "\n\nNOTE: Give user the store locator link directly: [Find a Store](https://watchdna.com/tools/storelocator) — tell them to search by brand or city on the map."
 
-    # Most expensive — computed in backend, not guessed by AI
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
         best = get_most_expensive(currency)
@@ -788,8 +880,7 @@ async def chat(req: ChatRequest):
     )
     reply = response.choices[0].message.content
 
-    # Fix lazy "here" links — replace [here](url) and [View here](url) etc. with [Product Title](url)
-    # Build a url->title map from knowledge base
+    # Fix lazy "here" links
     kb = get_knowledge_base()
     if kb:
         url_to_title = {
