@@ -892,13 +892,36 @@ def scrape_brand_pages() -> list:
             if resp.status_code != 200:
                 return None
             soup = BeautifulSoup(resp.text, "html.parser")
+
+            # Extract article links from the ARTICLES tab before stripping tags
+            domain = urlparse(BASE_URL).netloc
+            article_urls = []
+            seen_article_urls = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                full = urljoin(BASE_URL, href).split("?")[0].split("#")[0]
+                if (urlparse(full).netloc == domain
+                        and "/blogs/" in full
+                        and "/blogs/history/" not in full
+                        and full not in (BASE_URL + "/blogs/watch-enthusiast", BASE_URL + "/blogs/press")
+                        and full not in seen_article_urls):
+                    seen_article_urls.add(full)
+                    article_urls.append(full)
+
             for tag in soup.find_all(["nav", "header", "footer", "script", "style"]):
                 tag.decompose()
             lines = [l for l in soup.get_text(separator="\n", strip=True).split("\n") if l.strip()]
             clean = "\n".join(lines)
             title = soup.title.string.strip() if soup.title else brand_url
             title = title.replace(" – WatchDNA","").replace(" - WatchDNA","").strip()
-            return {"url": brand_url, "title": title, "content": clean[:5000]}
+            slug = brand_url.rstrip("/").split("/blogs/history/")[-1]
+            return {
+                "url": brand_url,
+                "title": title,
+                "content": clean[:5000],
+                "slug": slug,
+                "article_urls": article_urls,
+            }
         except Exception:
             return None
 
@@ -960,6 +983,26 @@ def main():
     all_entries = products + articles + pages
     print(f"\n✅ {len(products)} products + {len(articles)} articles + {len(pages)} pages = {len(all_entries)} total")
 
+    # Build brand_article_map: slug -> list of article URLs found on that brand page
+    # Also build a url->published map from scraped articles for fast lookup
+    article_pub_map = {a["url"]: a.get("published", "") for a in articles}
+    brand_article_map = {}
+    for bp in brand_pages:
+        slug = bp.get("slug", "")
+        raw_urls = bp.get("article_urls", [])
+        if not slug or not raw_urls:
+            continue
+        # Attach published dates where known and deduplicate
+        seen = set()
+        entries = []
+        for u in raw_urls:
+            if u not in seen:
+                seen.add(u)
+                entries.append({"url": u, "published": article_pub_map.get(u, "")})
+        # Sort newest first
+        entries.sort(key=lambda x: x["published"], reverse=True)
+        brand_article_map[slug] = entries
+
     with open("knowledge_base.json", "w", encoding="utf-8") as f:
         json.dump({
             "scraped_at": datetime.now(timezone.utc).isoformat(),
@@ -967,6 +1010,7 @@ def main():
             "product_count": len(products),
             "article_count": len(articles),
             "page_count": len(pages),
+            "brand_article_map": brand_article_map,
             "pages": all_entries,
         }, f, indent=2, ensure_ascii=False)
 
