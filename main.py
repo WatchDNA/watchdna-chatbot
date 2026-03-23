@@ -550,6 +550,9 @@ BRAND LINKS:
 - Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
 - Each contributor has their own individual URL — always use that specific URL.
 - Format: [Full Name](their-individual-url) — Role/bio
+- Each contributor page in WEBSITE CONTENT shows their bio AND their articles listed under "BRENT'S ARTICLES" / "CAROL'S ARTICLES" etc.
+- When asked "what articles did [contributor] write" — find their page in WEBSITE CONTENT and list the articles shown there with links.
+- Articles in the watch-enthusiast blog have an "Author:" field — use this to match articles to contributors.
 
 === STORE LOCATOR ===
 - Always immediately give this link: [Find a Store](https://watchdna.com/tools/storelocator)
