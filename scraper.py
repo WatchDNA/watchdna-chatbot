@@ -341,6 +341,9 @@ def scrape_articles():
                 break
 
     # Also scrape /pages/stories which links to external & community articles
+    # Build a lookup of article dates from the already-scraped articles
+    article_date_lookup = {a["url"]: a.get("published","") for a in articles}
+
     try:
         resp = requests.get(f"{BASE_URL}/pages/stories", headers=BASE_HEADERS, timeout=12)
         if resp.status_code == 200:
@@ -348,16 +351,34 @@ def scrape_articles():
             domain = urlparse(BASE_URL).netloc
             for a in soup.find_all("a", href=True):
                 href = urljoin(BASE_URL, a["href"]).split("?")[0].split("#")[0]
-                # Only include blog article links from the same domain
                 if urlparse(href).netloc == domain and "/blogs/" in href and href not in seen_urls:
                     seen_urls.add(href)
                     link_text = a.get_text(strip=True)
-                    if len(link_text) > 10:  # skip nav links
+                    if len(link_text) > 10:
+                        # Use date from already-scraped articles if available
+                        pub_date = article_date_lookup.get(href, "")
+                        # Try fetching date from article meta if not found
+                        if not pub_date:
+                            try:
+                                ar = requests.get(href, headers=BASE_HEADERS, timeout=8)
+                                if ar.status_code == 200:
+                                    asoup = BeautifulSoup(ar.text, "html.parser")
+                                    meta = asoup.find("meta", {"property": "article:published_time"})
+                                    if meta and meta.get("content"):
+                                        pub_date = meta["content"][:10]
+                            except Exception:
+                                pass
                         articles.append({
                             "url": href,
                             "title": link_text,
-                            "content": f"Article Type: Stories Page Link\nArticle: {link_text}\nURL: {href}\nBlog Page: {BASE_URL}/pages/stories",
-                            "published": "",
+                            "content": (
+                                f"Article Type: Stories Page Link\n"
+                                f"Article: {link_text}\n"
+                                f"Published: {pub_date}\n"
+                                f"URL: {href}\n"
+                                f"Blog Page: {BASE_URL}/pages/stories"
+                            ),
+                            "published": pub_date,
                             "blog": "stories",
                         })
             print(f"  ✓ /pages/stories: scraped additional article links")
