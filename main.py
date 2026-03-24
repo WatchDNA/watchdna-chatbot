@@ -66,6 +66,48 @@ def _is_accessory(page: dict) -> bool:
     return False
 
 
+def _patch_kb(kb):
+    """
+    Fix articles whose content has 'Published: ' (empty) but have a 'published' field set.
+    Also normalises blog field so watch-enthusiast/press articles are correctly typed.
+    Runs once at load time — makes old KBs work correctly without rescraping.
+    """
+    patched = 0
+    for page in kb.get("pages", []):
+        url = page.get("url", "")
+        pub = page.get("published", "")
+        content_str = page.get("content", "")
+
+        # Fix empty Published: in content
+        if pub and re.search(r"Published:\s*\n", content_str):
+            page["content"] = re.sub(r"Published:\s*(?=\n|$)", f"Published: {pub}", content_str)
+            patched += 1
+        elif pub and "Published:" not in content_str and "/blogs/" in url:
+            page["content"] = content_str.replace(
+                f"URL: {url}", f"Published: {pub}\nURL: {url}", 1
+            )
+            patched += 1
+
+        # Fix blog field: stories-labelled articles that are actually watch-enthusiast or press
+        if page.get("blog") == "stories" and "/blogs/" in url:
+            if "/blogs/watch-enthusiast/" in url:
+                page["blog"] = "watch-enthusiast"
+                page["content"] = page["content"].replace(
+                    "Article Type: Stories Page Link",
+                    "Article Type: Community Article (Watch Enthusiast)"
+                )
+            elif "/blogs/press/" in url:
+                page["blog"] = "press"
+                page["content"] = page["content"].replace(
+                    "Article Type: Stories Page Link",
+                    "Article Type: Press Release"
+                )
+
+    if patched:
+        print(f"[KB PATCH] Fixed Published: in {patched} articles")
+    return kb
+
+
 def get_knowledge_base():
     global _kb_cache
     if _kb_cache:
@@ -73,14 +115,14 @@ def get_knowledge_base():
     if Path(KNOWLEDGE_FILE).exists():
         try:
             with open(KNOWLEDGE_FILE) as f:
-                _kb_cache = json.load(f)
+                _kb_cache = _patch_kb(json.load(f))
             print(f"KB loaded: {_kb_cache.get('product_count',0)} products")
             return _kb_cache
         except Exception as e:
             print(f"Local KB error: {e}")
     try:
         with urllib.request.urlopen(GITHUB_KB_URL, timeout=20) as r:
-            _kb_cache = json.loads(r.read().decode())
+            _kb_cache = _patch_kb(json.loads(r.read().decode()))
         print(f"GitHub KB loaded: {_kb_cache.get('product_count',0)} products")
         return _kb_cache
     except Exception as e:
