@@ -376,28 +376,67 @@ def scrape_articles():
             return ""
 
     def fetch_article_detail(article_url):
-        """Fetch a single article page and return (date, author, body_text)."""
+        """Fetch a single article page and return (date, author, body_text).
+        Tries multiple date sources since not all blog handles use standard meta tags.
+        """
         try:
             r = requests.get(article_url, headers=BASE_HEADERS, timeout=12)
             if r.status_code != 200:
                 return "", "", ""
             soup = BeautifulSoup(r.text, "html.parser")
-            # Date from meta
             date = ""
-            meta_date = soup.find("meta", {"property": "article:published_time"})
-            if meta_date and meta_date.get("content"):
-                date = meta_date["content"][:10]
+
+            # 1. Standard Shopify article meta
+            for prop in ["article:published_time", "article:modified_time"]:
+                tag = soup.find("meta", {"property": prop})
+                if tag and tag.get("content"):
+                    date = tag["content"][:10]
+                    break
+
+            # 2. JSON-LD structured data (many themes use this)
             if not date:
-                # Try date pattern in page text
+                for script in soup.find_all("script", {"type": "application/ld+json"}):
+                    try:
+                        import json as _json
+                        data = _json.loads(script.string or "")
+                        # Could be a list or dict
+                        items = data if isinstance(data, list) else [data]
+                        for item in items:
+                            for key in ["datePublished", "dateCreated", "dateModified"]:
+                                val = item.get(key, "")
+                                if val and len(val) >= 10:
+                                    date = val[:10]
+                                    break
+                            if date:
+                                break
+                    except Exception:
+                        pass
+                    if date:
+                        break
+
+            # 3. <time> element with datetime attribute
+            if not date:
+                for time_el in soup.find_all("time", {"datetime": True}):
+                    dt = time_el.get("datetime", "")
+                    if dt and len(dt) >= 10 and dt[:4].isdigit():
+                        date = dt[:10]
+                        break
+
+            # 4. Visible month/day/year pattern in page text
+            if not date:
                 m = date_pattern.search(r.text)
                 if m:
                     date = parse_date_str(m.group(0))
+
             # Author
             author = ""
-            meta_author = soup.find("meta", {"name": "author"}) or soup.find("meta", {"property": "article:author"})
-            if meta_author and meta_author.get("content"):
-                author = meta_author["content"].strip()
-            # Body text — remove nav/footer/header
+            for attr_name, attr_val in [("name", "author"), ("property", "article:author")]:
+                tag = soup.find("meta", {attr_name: attr_val})
+                if tag and tag.get("content"):
+                    author = tag["content"].strip()
+                    break
+
+            # Body text
             for tag in soup(["nav", "header", "footer", "script", "style"]):
                 tag.decompose()
             body = " ".join(soup.get_text(separator=" ").split())[:600]
@@ -405,12 +444,53 @@ def scrape_articles():
         except Exception:
             return "", "", ""
 
-    # Step 2: Paginate through each blog's listing pages (HTML)
-    for blog_handle in ["watch-enthusiast", "press"]:
-        label = BLOG_LABEL[blog_handle]
-        blog_page_url = f"{BASE_URL}/blogs/{blog_handle}"
-        found_on_this_blog = []
+    # Step 2: Discover ALL blog handles dynamically from /pages/stories
+    # then also always include watch-enthusiast and press
+    discovered_handles = set(["watch-enthusiast", "press"])
+    try:
+        stories_resp = requests.get(f"{BASE_URL}/pages/stories", headers=BASE_HEADERS, timeout=12)
+        if stories_resp.status_code == 200:
+            stories_soup = BeautifulSoup(stories_resp.text, "html.parser")
+            for a_tag in stories_soup.find_all("a", href=True):
+                href = a_tag.get("href", "")
+                m = re.match(r"/blogs/([^/]+)/", href)
+                if m:
+                    handle = m.group(1)
+                    if handle != "history":
+                        discovered_handles.add(handle)
+        print(f"  🔎 Discovered {len(discovered_handles)} blog handles: {sorted(discovered_handles)}")
+    except Exception as e:
+        print(f"  ✗ Couldn't discover blog handles: {e}")
 
+    # Try atom feeds for all discovered handles to get dates
+    for handle in discovered_handles:
+        for feed_path in [f"/blogs/{handle}.atom", f"/blogs/{handle}/feed.atom"]:
+            try:
+                resp = requests.get(BASE_URL + feed_path, headers=BASE_HEADERS, timeout=12)
+                if resp.status_code == 200:
+                    before = len(rss_dates)
+                    # reuse parse_feed from fetch_rss_dates via inline parse
+                    import xml.etree.ElementTree as ET
+                    root = ET.fromstring(resp.text)
+                    for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
+                        link_el = entry.find("{http://www.w3.org/2005/Atom}link")
+                        link = (link_el.get("href", "") if link_el is not None else "").strip().split("?")[0]
+                        pub = (
+                            entry.findtext("{http://www.w3.org/2005/Atom}published") or
+                            entry.findtext("{http://www.w3.org/2005/Atom}updated") or ""
+                        ).strip()
+                        if link and pub:
+                            rss_dates[link] = pub[:10]
+                    added = len(rss_dates) - before
+                    if added:
+                        print(f"  📡 {handle}.atom: +{added} dates")
+                    break
+            except Exception:
+                pass
+
+    # Helper to scrape one blog handle's listing pages
+    def scrape_blog_handle(blog_handle):
+        found = []
         listing_page = 1
         while listing_page <= 30:
             try:
@@ -419,8 +499,7 @@ def scrape_articles():
                 if resp.status_code != 200:
                     break
                 soup = BeautifulSoup(resp.text, "html.parser")
-                page_article_urls = []
-
+                page_items = []
                 for a_tag in soup.find_all("a", href=True):
                     href = a_tag.get("href", "")
                     if f"/blogs/{blog_handle}/" not in href:
@@ -428,64 +507,65 @@ def scrape_articles():
                     full_url = urljoin(BASE_URL, href).split("?")[0].split("#")[0]
                     if full_url in seen_urls:
                         continue
-                    # Try to get date from nearby text on listing page
                     nearby_date = ""
                     parent = a_tag.find_parent()
                     for _ in range(5):
                         if parent is None:
                             break
-                        text = parent.get_text(" ", strip=True)
-                        dm = date_pattern.search(text)
+                        dm = date_pattern.search(parent.get_text(" ", strip=True))
                         if dm:
                             nearby_date = parse_date_str(dm.group(0))
                             break
                         parent = parent.find_parent()
-                    # RSS date overrides listing page date
-                    final_date = rss_dates.get(full_url) or nearby_date
-                    # Get title from link text
                     title = a_tag.get_text(strip=True)
                     if len(title) < 5:
                         continue
                     seen_urls.add(full_url)
-                    page_article_urls.append((full_url, title, final_date))
-
-                if not page_article_urls:
-                    break  # No new articles on this listing page → stop paginating
-
-                found_on_this_blog.extend(page_article_urls)
-                print(f"  ✓ {blog_handle} listing page {listing_page}: {len(page_article_urls)} new articles")
+                    page_items.append((full_url, title, rss_dates.get(full_url) or nearby_date))
+                if not page_items:
+                    break
+                found.extend(page_items)
                 listing_page += 1
                 time.sleep(0.2)
             except Exception as e:
-                print(f"  ✗ {blog_handle} listing page {listing_page}: {e}")
+                print(f"  ✗ {blog_handle} page {listing_page}: {e}")
                 break
+        return found
 
-        # Step 3: Fetch each article in parallel to get date/author/body
+    # Step 3: Scrape all discovered handles
+    # Determine label for each handle
+    def handle_label(h):
+        if h == "press":
+            return "Press Release"
+        return "Community Article (Watch Enthusiast)"
+
+    for blog_handle in sorted(discovered_handles):
+        label = handle_label(blog_handle)
+        blog_page_url = f"{BASE_URL}/blogs/{blog_handle}"
+        found_on_this_blog = scrape_blog_handle(blog_handle)
+
+        if not found_on_this_blog:
+            continue
+
         print(f"  🔍 Fetching {len(found_on_this_blog)} {blog_handle} articles for details...")
 
-        def _fetch(item):
+        def _fetch(item, _handle=blog_handle, _label=label, _blog_page=blog_page_url):
             url, title, known_date = item
             art_date, author, body = fetch_article_detail(url)
-            # Priority: RSS > article meta > listing page text
             final_date = rss_dates.get(url) or art_date or known_date
             if not author:
                 author = "WatchDNA"
-            content = (
-                f"Article Type: {label}\n"
+            c = (
+                f"Article Type: {_label}\n"
                 f"Article: {title}\n"
                 f"Published: {final_date}\n"
                 f"Author: {author}\n"
                 f"URL: {url}\n"
-                f"Blog Page: {blog_page_url}\n"
+                f"Blog Page: {_blog_page}\n"
                 f"Content: {body}"
             )
-            return {
-                "url": url,
-                "title": title,
-                "content": content,
-                "published": final_date,
-                "blog": blog_handle,
-            }
+            return {"url": url, "title": title, "content": c,
+                    "published": final_date, "blog": _handle}
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(_fetch, item) for item in found_on_this_blog]
@@ -502,7 +582,7 @@ def scrape_articles():
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             domain = urlparse(BASE_URL).netloc
-            extras = 0
+            extra_items = []  # (href, title)
             for a in soup.find_all("a", href=True):
                 href = urljoin(BASE_URL, a["href"]).split("?")[0].split("#")[0]
                 if urlparse(href).netloc != domain or "/blogs/" not in href:
@@ -513,32 +593,52 @@ def scrape_articles():
                 if len(link_text) < 10:
                     continue
                 seen_urls.add(href)
+                extra_items.append((href, link_text))
+
+            # Parallel-fetch dates for all undated stories articles
+            def _fetch_story(item):
+                href, link_text = item
                 pub_date = rss_dates.get(href, "")
+                author = "WatchDNA"
+                body = ""
                 if not pub_date:
-                    try:
-                        ar = requests.get(href, headers=BASE_HEADERS, timeout=8)
-                        if ar.status_code == 200:
-                            asoup = BeautifulSoup(ar.text, "html.parser")
-                            meta = asoup.find("meta", {"property": "article:published_time"})
-                            if meta and meta.get("content"):
-                                pub_date = meta["content"][:10]
-                    except Exception:
-                        pass
-                articles.append({
+                    art_date, art_author, art_body = fetch_article_detail(href)
+                    pub_date = art_date
+                    if art_author:
+                        author = art_author
+                    body = art_body
+                # Determine blog handle from URL
+                blog_h = "watch-enthusiast"
+                if "/blogs/press/" in href:
+                    blog_h = "press"
+                    label = "Press Release"
+                else:
+                    label = "Community Article (Watch Enthusiast)"
+                return {
                     "url": href,
                     "title": link_text,
                     "content": (
-                        f"Article Type: Community Article (Watch Enthusiast)\n"
+                        f"Article Type: {label}\n"
                         f"Article: {link_text}\n"
                         f"Published: {pub_date}\n"
+                        f"Author: {author}\n"
                         f"URL: {href}\n"
                         f"Blog Page: {BASE_URL}/pages/stories"
                     ),
                     "published": pub_date,
-                    "blog": "watch-enthusiast",
-                })
-                extras += 1
-            print(f"  ✓ /pages/stories: {extras} additional articles")
+                    "blog": blog_h,
+                }
+
+            print(f"  🔍 Fetching dates for {len(extra_items)} /pages/stories articles...")
+            with ThreadPoolExecutor(max_workers=15) as executor:
+                futures = [executor.submit(_fetch_story, item) for item in extra_items]
+                for future in _as_completed(futures):
+                    result = future.result()
+                    if result:
+                        articles.append(result)
+
+            dated_extras = sum(1 for a in articles if a.get("published") and a.get("blog") in ("watch-enthusiast","press") and "/pages/stories" in a.get("content",""))
+            print(f"  ✓ /pages/stories: {len(extra_items)} articles added")
     except Exception as e:
         print(f"  ✗ /pages/stories: {e}")
 
