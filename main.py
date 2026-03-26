@@ -68,43 +68,60 @@ def _is_accessory(page: dict) -> bool:
 
 def _patch_kb(kb):
     """
-    Fix articles whose content has 'Published: ' (empty) but have a 'published' field set.
-    Also normalises blog field so watch-enthusiast/press articles are correctly typed.
-    Runs once at load time — makes old KBs work correctly without rescraping.
+    Fix KB at load time — no HTTP calls, pure in-memory fixes:
+    1. Sync published field → Published: line in content (fixes blank dates).
+    2. Fix mislabelled blog/article-type fields for /pages/stories-scraped articles.
+    3. Normalise all article URLs (strip query strings and trailing slashes).
     """
     patched = 0
     for page in kb.get("pages", []):
         url = page.get("url", "")
-        pub = page.get("published", "")
+        if "/blogs/" not in url or "/blogs/history/" in url:
+            continue
+
+        # Normalise URL in page dict
+        clean_url = url.split("?")[0].rstrip("/")
+        if clean_url != url:
+            page["url"] = clean_url
+            url = clean_url
+
         content_str = page.get("content", "")
+        pub = page.get("published", "")
 
-        # Fix empty Published: in content
-        if pub and re.search(r"Published:\s*\n", content_str):
-            page["content"] = re.sub(r"Published:\s*(?=\n|$)", f"Published: {pub}", content_str)
-            patched += 1
-        elif pub and "Published:" not in content_str and "/blogs/" in url:
-            page["content"] = content_str.replace(
-                f"URL: {url}", f"Published: {pub}\nURL: {url}", 1
-            )
-            patched += 1
+        # Sync published field → Published: in content
+        if pub:
+            if re.search(r"Published:\s*(?:\n|$)", content_str):
+                page["content"] = re.sub(
+                    r"Published:\s*(?=\n|$)", f"Published: {pub}", content_str
+                )
+                patched += 1
+            elif "Published:" not in content_str:
+                page["content"] = content_str.replace(
+                    f"URL: {url}", f"Published: {pub}\nURL: {url}", 1
+                )
+                patched += 1
 
-        # Fix blog field: stories-labelled articles that are actually watch-enthusiast or press
-        if page.get("blog") == "stories" and "/blogs/" in url:
-            if "/blogs/watch-enthusiast/" in url:
+        # Fix mislabelled blog field and article type
+        if page.get("blog") in ("stories", None, ""):
+            if "/blogs/press/" in url:
+                page["blog"] = "press"
+                page["content"] = page.get("content","").replace(
+                    "Article Type: Stories Page Link", "Article Type: Press Release"
+                )
+            else:
                 page["blog"] = "watch-enthusiast"
-                page["content"] = page["content"].replace(
+                page["content"] = page.get("content","").replace(
                     "Article Type: Stories Page Link",
                     "Article Type: Community Article (Watch Enthusiast)"
                 )
-            elif "/blogs/press/" in url:
-                page["blog"] = "press"
-                page["content"] = page["content"].replace(
-                    "Article Type: Stories Page Link",
-                    "Article Type: Press Release"
-                )
 
-    if patched:
-        print(f"[KB PATCH] Fixed Published: in {patched} articles")
+    # Normalise brand_article_map URLs too
+    bam = kb.get("brand_article_map", {})
+    for slug, entries in bam.items():
+        for entry in entries:
+            entry["url"] = entry["url"].split("?")[0].rstrip("/")
+
+    print(f"[KB PATCH] Synced dates/labels in {patched} articles")
     return kb
 
 
@@ -320,31 +337,45 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     if is_accessory_query:
         pool = sorted(accessories, key=score, reverse=True) + sorted(watches, key=score, reverse=True)[:10]
     elif is_brand_blog_query:
-        # Use brand_article_map from KB for exact URL-based article lookup
+        # Build url_to_article with normalized URLs (no query string, no trailing slash)
         brand_article_map = data.get("brand_article_map", {})
-        # Find which brand slug matches the query by scoring against slug/brand name
-        url_to_article = {p["url"]: p for p in articles}
+        url_to_article = {
+            p["url"].split("?")[0].rstrip("/"): p
+            for p in articles
+        }
         matched_articles = []
-        # Score each slug against the query to find best brand match
+
+        # Find best matching brand slug using word-boundary matching
+        # (substring matching causes "any" to match "company", "blog" to match "seablog" etc.)
         best_slug = None
         best_slug_score = 0
         for slug in brand_article_map:
-            slug_score = sum(1 for w in keywords if w in slug.replace("-", " "))
+            slug_text = slug.replace("-", " ").replace("_", " ")
+            slug_score = sum(
+                1 for w in keywords
+                if re.search(r'\b' + re.escape(w) + r'\b', slug_text)
+            )
             if slug_score > best_slug_score:
                 best_slug_score = slug_score
                 best_slug = slug
+
         if best_slug and best_slug_score > 0:
             for entry in brand_article_map[best_slug]:
-                article = url_to_article.get(entry["url"])
+                norm_url = entry["url"].split("?")[0].rstrip("/")
+                article = url_to_article.get(norm_url)
                 if article:
                     matched_articles.append(article)
-        # Fall back to keyword scoring if no map match
+            # Sort by date descending
+            matched_articles.sort(key=lambda p: p.get("published", ""), reverse=True)
+
+        # Always fall back to keyword scoring if map gave nothing
         if not matched_articles:
             matched_articles = sorted(
-                [p for p in articles if score(p) > 0],
+                [p for p in articles if score(p) > 0 and "/blogs/history/" not in p.get("url","")],
                 key=lambda p: p.get("published", ""),
                 reverse=True
             )
+
         # Include brand history page for context
         brand_history = sorted(
             [p for p in other_pages if score(p) > 0 and "/blogs/history/" in p.get("url", "")],
