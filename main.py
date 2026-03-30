@@ -312,6 +312,9 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         text = (page.get("title", "") + " " + page.get("content", "")).lower()
         return sum(1 for kw in keywords if kw in text)
 
+    def is_premium(page):
+        return "Premium Brands" in page.get("content", "")
+
     is_accessory_query = any(w in query_lower for w in [
         "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
     ])
@@ -422,7 +425,8 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
                 if line.startswith("Brand/Vendor:"):
                     vendor = line.replace("Brand/Vendor:", "").strip().lower()
                     break
-            return 1 if vendor in PREMIUM_BRANDS else 0
+            # Premium = tagged in KB OR vendor in hardcoded list
+            return 1 if ("Premium Brands" in page.get("content","") or vendor in PREMIUM_BRANDS) else 0
 
         if requested_colors:
             scored = sorted(watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
@@ -430,16 +434,16 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         elif keywords:
             top = [w for w in watches if score(w) > 0]
             rest = [w for w in watches if score(w) == 0]
-            # Within top matches: premium brands first, then by keyword score
             top_sorted = sorted(top, key=lambda p: (premium_score(p), score(p)), reverse=True)
             random.shuffle(rest)
             pool = top_sorted + rest + other_pages + articles
         else:
-            # No keywords: premium first, rest shuffled
-            premium = [w for w in watches if premium_score(w) == 1]
-            non_premium = [w for w in watches if premium_score(w) == 0]
+            # No keywords: KB-tagged premium first, then hardcoded premium, then rest shuffled
+            kb_premium   = [w for w in watches if "Premium Brands" in w.get("content","")]
+            list_premium = [w for w in watches if "Premium Brands" not in w.get("content","") and premium_score(w) == 1]
+            non_premium  = [w for w in watches if "Premium Brands" not in w.get("content","") and premium_score(w) == 0]
             random.shuffle(non_premium)
-            pool = premium + non_premium + other_pages + articles
+            pool = kb_premium + list_premium + non_premium + other_pages + articles
 
     context = ""
     for page in pool:
@@ -639,7 +643,10 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 - ALL products in WEBSITE CONTENT are already filtered to only those available in the {currency} market.
 - Show prices exactly as in the content. Do NOT convert or calculate.
 - Only recommend products from WEBSITE CONTENT. Never invent product names or URLs.
-- Format: [Product Name](url) — {symbol}X.XX {currency}
+- Format for EACH watch recommendation:
+  **[Product Name](url)** — {symbol}X.XX {currency}
+  Brief description.
+  (The product name IS the link — do NOT add a separate link after the description.)
 - Most expensive watch: use the MOST EXPENSIVE NOTE below if provided — do not guess.
 
 === ACCESSORIES ===
