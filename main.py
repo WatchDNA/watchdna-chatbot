@@ -239,42 +239,86 @@ def find_brand_in_query(query: str):
 
 
 def extract_budget(query: str):
+    """
+    Returns (amount, direction) where direction is "max" or "min".
+    max = under/below/up to X
+    min = over/above/more than X
+    Returns (None, None) if no budget found.
+    """
     q = query.lower().strip()
 
-    # Handle shorthand like "5k", "2.5k" first
-    k_match = re.search(r'(?:under|below|less than|around|about|~|budget.*?)?\s*\$?([\d.]+)\s*k\b', q)
-    if k_match:
-        try:
-            return float(k_match.group(1)) * 1000
-        except:
-            pass
+    MAX_WORDS = r"(?:under|below|less than|up to|budget|max|maximum|no more than|at most)"
+    MIN_WORDS = r"(?:over|above|more than|at least|minimum|starting from|above)"
 
-    # Handle "2 grand", "3 grand"
-    grand_match = re.search(r'(\d+)\s*grand', q)
+    def parse_amount(s):
+        try: return float(s.replace(",", ""))
+        except: return None
+
+    # k shorthand with direction: "under 5k", "over 2k"
+    k_max = re.search(MAX_WORDS + r"\s*~?\$?([\d.]+)\s*k\b", q)
+    if k_max:
+        v = parse_amount(k_max.group(1))
+        if v: return (v * 1000, "max")
+
+    k_min = re.search(MIN_WORDS + r"\s*~?\$?([\d.]+)\s*k\b", q)
+    if k_min:
+        v = parse_amount(k_min.group(1))
+        if v: return (v * 1000, "min")
+
+    # Bare "5k" with no direction = max (assume budget)
+    k_bare = re.search(r"(?<![a-z])\$?([\d.]+)\s*k\b", q)
+    if k_bare:
+        v = parse_amount(k_bare.group(1))
+        if v: return (v * 1000, "max")
+
+    # grand: "2 grand", "over 3 grand"
+    grand_min = re.search(MIN_WORDS + r"\s*(\d+)\s*grand", q)
+    if grand_min:
+        v = parse_amount(grand_min.group(1))
+        if v: return (v * 1000, "min")
+    grand_match = re.search(r"(\d+)\s*grand", q)
     if grand_match:
-        try:
-            return float(grand_match.group(1)) * 1000
-        except:
-            pass
+        v = parse_amount(grand_match.group(1))
+        if v: return (v * 1000, "max")
 
-    patterns = [
+    # Max patterns
+    max_patterns = [
         r"under\s*~?\$?([\d,]+)",
         r"below\s*~?\$?([\d,]+)",
         r"less than\s*~?\$?([\d,]+)",
-        r"(?:around|about|~|approximately)\s*\$?([\d,]+)",
-        r"\$?([\d,]+)\s*(?:cad|usd|gbp|chf|eur|dollars|budget|or less|max|maximum)",
+        r"up to\s*~?\$?([\d,]+)",
+        r"\$?([\d,]+)\s*(?:or less|max|maximum)",
         r"budget\s*(?:of|is|:)?\s*~?\$?([\d,]+)",
         r"spend\s*~?\$?([\d,]+)",
-        r"up to\s*~?\$?([\d,]+)",
     ]
-    for p in patterns:
+    for p in max_patterns:
         m = re.search(p, q)
         if m:
-            try:
-                return float(m.group(1).replace(",", ""))
-            except:
-                pass
-    return None
+            v = parse_amount(m.group(1))
+            if v: return (v, "max")
+
+    # Min patterns
+    min_patterns = [
+        r"over\s*~?\$?([\d,]+)",
+        r"above\s*~?\$?([\d,]+)",
+        r"more than\s*~?\$?([\d,]+)",
+        r"at least\s*~?\$?([\d,]+)",
+        r"starting\s*(?:from|at)?\s*~?\$?([\d,]+)",
+        r"\$?([\d,]+)\s*(?:or more|and up|\+)",
+    ]
+    for p in min_patterns:
+        m = re.search(p, q)
+        if m:
+            v = parse_amount(m.group(1))
+            if v: return (v, "min")
+
+    # Ambiguous: "$2000 CAD" etc — assume max
+    m = re.search(r"\$?([\d,]+)\s*(?:cad|usd|gbp|chf|eur|dollars)", q)
+    if m:
+        v = parse_amount(m.group(1))
+        if v: return (v, "max")
+
+    return (None, None)
 
 
 def load_knowledge(query: str = "", currency: str = "CAD") -> str:
@@ -283,7 +327,7 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         return "Knowledge base not available."
 
     currency = currency.upper()
-    budget = extract_budget(query)
+    budget_amount, budget_dir = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
     query_lower = query.lower()
 
@@ -302,7 +346,10 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
                 continue
             if page.get("price", 0) == 0:
                 continue
-            if budget and page.get("price", 0) > budget:
+            price = page.get("price", 0)
+            if budget_amount and budget_dir == "max" and price > budget_amount:
+                continue
+            if budget_amount and budget_dir == "min" and price < budget_amount:
                 continue
             if _is_accessory(page):
                 accessories.append(page)
@@ -680,6 +727,7 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 - Show prices exactly as in the content. Do NOT convert or calculate.
 - CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. If you cannot find a matching product in WEBSITE CONTENT, say so — do NOT invent product names, brands, prices, or URLs from your training knowledge. Tissot, Seiko, TAG Heuer, Tudor, Rolex etc. may be brands you know but if their products are not in WEBSITE CONTENT for this market, do NOT recommend them.
 - When asked to compare brands or show watches from multiple brands: ONLY list watches that appear in WEBSITE CONTENT for the current currency market. If a brand has no products in WEBSITE CONTENT, say "X is not currently available on WatchDNA in [currency]" — never invent products for that brand.
+- EVERY product you recommend must have its exact title and URL copied verbatim from WEBSITE CONTENT. Product names like "Adventure Sport Automatic" or "Freedom 60 Automatic" that have no URL in WEBSITE CONTENT are HALLUCINATIONS — never do this.
 - STRICT FORMAT for EACH watch recommendation — no exceptions:
   **[Product Name](url)** — {symbol}X.XX {currency}
   Brief description in 1-2 sentences.
@@ -977,6 +1025,39 @@ async def chat(req: ChatRequest):
                 f"URL: {best['url']}. Use this exact data."
             )
 
+    # Brand product hint — inject exact product list for any brand mentioned in query
+    # This prevents GPT from hallucinating product names/URLs
+    brand_product_hint = ""
+    msg_lower_hint = req.message.lower()
+    if any(w in msg_lower_hint for w in ["compare", "vs", "versus", "show me", "watches from", "collection"]):
+        data = get_knowledge_base()
+        if data:
+            all_products = [p for p in data.get("pages", [])
+                           if "/products/" in p.get("url", "") and p.get("currency", "") == currency]
+            # Find which brands are mentioned
+            mentioned_brands = []
+            for word_combo in [msg_lower_hint, history_text.lower()]:
+                for p in all_products:
+                    for line in p.get("content","").split("\n"):
+                        if line.startswith("Brand/Vendor:"):
+                            vendor = line.replace("Brand/Vendor:","").strip()
+                            if vendor.lower() in word_combo and vendor not in mentioned_brands:
+                                mentioned_brands.append(vendor)
+            mentioned_brands = list(dict.fromkeys(mentioned_brands))[:3]  # max 3 brands
+            if mentioned_brands:
+                hint_lines = ["\n\nEXACT PRODUCTS IN KB FOR THIS QUERY — USE ONLY THESE URLS:"]
+                for brand in mentioned_brands:
+                    brand_prods = [p for p in all_products
+                                  if any(line.replace("Brand/Vendor:","").strip() == brand
+                                        for line in p.get("content","").split("\n")
+                                        if line.startswith("Brand/Vendor:"))][:5]
+                    if brand_prods:
+                        hint_lines.append(f"\n{brand}:")
+                        sym = CURRENCY_SYMBOLS.get(currency, "$")
+                        for p in brand_prods:
+                            hint_lines.append(f"  - [{p['title']}]({p['url']}) — {sym}{p['price']:,.2f} {currency}")
+                brand_product_hint = "\n".join(hint_lines)
+
     brand_links = get_brand_history_links()
 
     system = SYSTEM_PROMPT.format(
@@ -989,7 +1070,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + expensive_hint + brands_hint,
+        knowledge=knowledge + store_hint + expensive_hint + brand_product_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
