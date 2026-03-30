@@ -383,22 +383,23 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         )
         pool = brand_history + matched_articles + other_pages
     elif is_article_query:
-        # Prioritise watch-enthusiast listing page (has real dates) + individual articles
-        we_listing = [p for p in other_pages if p.get("url","") == "https://watchdna.com/blogs/watch-enthusiast"]
-        we_articles = [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")]
-        pool = we_listing + we_articles + other_pages + articles
-    elif is_blog_query:
-        # Blogs = watch-enthusiast posts, sorted newest first by published date
-        we_listing = [p for p in other_pages if p.get("url","") == "https://watchdna.com/blogs/watch-enthusiast"]
-        stories_page = [p for p in other_pages if "pages/stories" in p.get("url","")]
-        blog_articles = [p for p in articles if p.get("blog","") in ("watch-enthusiast", "stories")]
-        # Sort by published date descending so AI sees newest first
-        blog_articles_sorted = sorted(
-            blog_articles,
-            key=lambda p: p.get("published", ""),
-            reverse=True
+        # Sort ALL articles newest-first — published date is ground truth from RSS/HTML scrape
+        we_articles = sorted(
+            [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")],
+            key=lambda p: p.get("published",""), reverse=True
         )
-        pool = we_listing + stories_page + blog_articles_sorted + other_pages
+        other_articles = sorted(
+            [p for p in articles if "/blogs/watch-enthusiast/" not in p.get("url","")],
+            key=lambda p: p.get("published",""), reverse=True
+        )
+        pool = we_articles + other_articles + other_pages
+    elif is_blog_query:
+        # Sort blog articles newest-first — put them FIRST so AI sees latest immediately
+        blog_articles_sorted = sorted(
+            [p for p in articles if p.get("blog","") in ("watch-enthusiast", "stories")],
+            key=lambda p: p.get("published", ""), reverse=True
+        )
+        pool = blog_articles_sorted + other_pages
     elif is_brand_query:
         # Put brands-dna, history pages, and groups page first
         brand_pages = [p for p in other_pages if any(x in p.get("url","") for x in
