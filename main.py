@@ -230,20 +230,45 @@ def get_brand_map():
 def find_brand_in_query(query: str):
     brand_map = get_brand_map()
     q = query.lower()
-    matches = [(len(k), v) for k, v in brand_map.items() if k in q]
+    matches = []
+    for k, v in brand_map.items():
+        # Word boundary match — prevents "longines" matching "long time"
+        if re.search(r'(?<![a-z])' + re.escape(k) + r'(?![a-z])', q):
+            matches.append((len(k), v))
     return sorted(matches, reverse=True)[0][1] if matches else None
 
 
 def extract_budget(query: str):
+    q = query.lower().strip()
+
+    # Handle shorthand like "5k", "2.5k" first
+    k_match = re.search(r'(?:under|below|less than|around|about|~|budget.*?)?\s*\$?([\d.]+)\s*k\b', q)
+    if k_match:
+        try:
+            return float(k_match.group(1)) * 1000
+        except:
+            pass
+
+    # Handle "2 grand", "3 grand"
+    grand_match = re.search(r'(\d+)\s*grand', q)
+    if grand_match:
+        try:
+            return float(grand_match.group(1)) * 1000
+        except:
+            pass
+
     patterns = [
-        r"under\s*\$?([\d,]+)",
-        r"below\s*\$?([\d,]+)",
-        r"less than\s*\$?([\d,]+)",
+        r"under\s*~?\$?([\d,]+)",
+        r"below\s*~?\$?([\d,]+)",
+        r"less than\s*~?\$?([\d,]+)",
+        r"(?:around|about|~|approximately)\s*\$?([\d,]+)",
         r"\$?([\d,]+)\s*(?:cad|usd|gbp|chf|eur|dollars|budget|or less|max|maximum)",
-        r"budget\s*(?:of|is|:)?\s*\$?([\d,]+)",
+        r"budget\s*(?:of|is|:)?\s*~?\$?([\d,]+)",
+        r"spend\s*~?\$?([\d,]+)",
+        r"up to\s*~?\$?([\d,]+)",
     ]
     for p in patterns:
-        m = re.search(p, query.lower())
+        m = re.search(p, q)
         if m:
             try:
                 return float(m.group(1).replace(",", ""))
