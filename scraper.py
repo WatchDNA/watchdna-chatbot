@@ -95,7 +95,7 @@ query GetProducts($cursor: String, $country: CountryCode!, $handle: String!) @in
         productType
         tags
         availableForSale
-        description(truncateAt: 300)
+        description(truncateAt: 600)
         priceRange {
           minVariantPrice {
             amount
@@ -1237,4 +1237,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
