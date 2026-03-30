@@ -383,16 +383,12 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         )
         pool = brand_history + matched_articles + other_pages
     elif is_article_query:
-        # Sort ALL articles newest-first — published date is ground truth from RSS/HTML scrape
+        # Articles = watch-enthusiast ONLY. Press releases are never articles.
         we_articles = sorted(
-            [p for p in articles if "/blogs/watch-enthusiast/" in p.get("url","")],
+            [p for p in articles if p.get("blog","") == "watch-enthusiast"],
             key=lambda p: p.get("published",""), reverse=True
         )
-        other_articles = sorted(
-            [p for p in articles if "/blogs/watch-enthusiast/" not in p.get("url","")],
-            key=lambda p: p.get("published",""), reverse=True
-        )
-        pool = we_articles + other_articles + other_pages
+        pool = we_articles + other_pages
     elif is_blog_query:
         # Sort blog articles newest-first — put them FIRST so AI sees latest immediately
         blog_articles_sorted = sorted(
@@ -677,8 +673,9 @@ BRAND LINKS:
 {brand_links}
 
 === ARTICLES (watch-enthusiast blog) ===
-- "Article" or "latest article" refers to posts from https://watchdna.com/blogs/watch-enthusiast
-- Find articles in WEBSITE CONTENT with "Article Type: Community Article" — sort by Published date to find the most recent.
+- "Article" or "latest article" refers EXCLUSIVELY to posts from https://watchdna.com/blogs/watch-enthusiast
+- NEVER return a press release as an article. Press releases have "Article Type: Press Release" — ignore them for article queries.
+- Find articles with "Article Type: Community Article (Watch Enthusiast)" — sort by Published date DESCENDING, the highest date is the most recent.
 - Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
 - NEVER invent titles, authors, dates, or URLs.
 
