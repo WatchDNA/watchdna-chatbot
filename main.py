@@ -686,8 +686,7 @@ BRAND LINKS:
   - Always direct the user to the brand's page on WatchDNA where all their articles are listed.
   - Format: "You can find all [Brand] articles here: [Brand Name on WatchDNA](https://watchdna.com/blogs/history/[slug])"
   - Use the slug from BRAND LINKS above (e.g. Rolex → rolex, TAG Heuer → tag-heuer, Rado → rado).
-  - Then pick 1–2 real article titles from WEBSITE CONTENT (if available) as a teaser, but only if you have their exact URL. Never guess or construct article URLs.
-  - If you don't have any article URLs in WEBSITE CONTENT for that brand, just give the brand page link and say all their articles are listed there.
+  - Do NOT mention or link any individual articles. Just give the brand page link and say all their articles are listed there.
 
 === BLOGS (watch-enthusiast) ===
 - "Blog", "latest blog", "blog post", or "latest post" refers to posts from https://watchdna.com/blogs/watch-enthusiast
