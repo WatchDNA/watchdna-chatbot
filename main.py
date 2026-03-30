@@ -420,16 +420,12 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         pool = brand_pages + rest_pages + keyword_watches + brand_articles + fallback_articles
     else:
         def premium_score(page):
-            content_text = page.get("content", "")
-            # Check Shopify tag first (most reliable)
-            if "Premium Brands" in content_text:
-                return 2
-            # Fallback: check vendor name
-            for line in content_text.split("\n"):
+            vendor = ""
+            for line in page.get("content", "").split("\n"):
                 if line.startswith("Brand/Vendor:"):
                     vendor = line.replace("Brand/Vendor:", "").strip().lower()
-                    return 1 if vendor in PREMIUM_BRANDS else 0
-            return 0
+                    break
+            return 1 if vendor in PREMIUM_BRANDS else 0
 
         if requested_colors:
             scored = sorted(watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
