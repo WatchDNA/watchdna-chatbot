@@ -746,7 +746,7 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - Once they pick a currency, recommend ONLY watches from that market (already filtered in content).
 - NEVER recommend watches from a different currency than what was asked — the same watch has different entries per market and only the correct one will work.
 - PREMIUM BRANDS FIRST: When recommending watches, always lead with premium/luxury brands (Rolex, Omega, TAG Heuer, Breitling, IWC, Cartier, Patek Philippe, Audemars Piguet, Hublot, Tudor, Longines, Rado, Tissot, Hamilton, Seiko Grand Seiko, Oris, Nomos, etc.) before entry-level or fashion brands — as long as they match the user's request and budget.
-- When the user asks for watches by feature (movement, case size, style, color, material etc.) ONLY recommend watches whose Features section in WEBSITE CONTENT matches. Examples:
+- When the user asks for watches by feature (strap material, movement, case size, style, color, material etc.) ONLY recommend watches whose content in WEBSITE CONTENT explicitly mentions that feature. NEVER infer or assume a feature if it is not stated — e.g. if "leather" is not in the product content, do NOT recommend it as a leather strap watch. Examples:
   - "automatic movement" → only watches with "Movement: Automatic" in Features
   - "chronograph" → only watches with "Styles: Chronograph" in Features (NOT just mentioned in description)
   - "43mm" → only watches with "Case Size: 43" in Features
