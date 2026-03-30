@@ -284,7 +284,13 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
             else:
                 watches.append(page)
         elif is_article:
-            articles.append(page)
+            # Skip blog listing pages (e.g. /blogs/press, /blogs/watch-enthusiast) — not real articles
+            url = page.get("url", "")
+            path = url.replace("https://watchdna.com", "").rstrip("/")
+            if path in ("/blogs/press", "/blogs/watch-enthusiast", "/blogs/watch_enthusiast"):
+                other_pages.append(page)
+            else:
+                articles.append(page)
         else:
             other_pages.append(page)
 
@@ -387,8 +393,12 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         pool = brand_history + matched_articles + other_pages
     elif is_article_query:
         # Articles = watch-enthusiast ONLY. Press releases are never articles.
+        # Also exclude blog listing pages (URL is /blogs/watch-enthusiast with no slug)
         we_articles = sorted(
-            [p for p in articles if p.get("blog","") == "watch-enthusiast"],
+            [p for p in articles
+             if p.get("blog","") == "watch-enthusiast"
+             and p.get("title","").upper() not in ("PRESS RELEASES", "WATCH ENTHUSIAST", "WATCH ENTHUSIAST – WATCHDNA")
+             and len(p.get("url","").split("/blogs/")[-1].split("/")) >= 2],
             key=lambda p: p.get("published",""), reverse=True
         )
         pool = we_articles + other_pages
@@ -643,7 +653,8 @@ PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational,
 - User's selected currency: {currency}
 - ALL products in WEBSITE CONTENT are already filtered to only those available in the {currency} market.
 - Show prices exactly as in the content. Do NOT convert or calculate.
-- CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. If you cannot find a matching product in WEBSITE CONTENT, say so — do NOT invent product names, brands, prices, or URLs from your training knowledge. Tissot, Seiko, TAG Heuer etc. may be brands you know but if their products are not in WEBSITE CONTENT for this market, do NOT recommend them.
+- CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. If you cannot find a matching product in WEBSITE CONTENT, say so — do NOT invent product names, brands, prices, or URLs from your training knowledge. Tissot, Seiko, TAG Heuer, Tudor, Rolex etc. may be brands you know but if their products are not in WEBSITE CONTENT for this market, do NOT recommend them.
+- When asked to compare brands or show watches from multiple brands: ONLY list watches that appear in WEBSITE CONTENT for the current currency market. If a brand has no products in WEBSITE CONTENT, say "X is not currently available on WatchDNA in [currency]" — never invent products for that brand.
 - STRICT FORMAT for EACH watch recommendation — no exceptions:
   **[Product Name](url)** — {symbol}X.XX {currency}
   Brief description in 1-2 sentences.
