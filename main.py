@@ -710,8 +710,20 @@ BRAND LINKS:
 - Once the user says yes (or any affirmative), the system will automatically use general AI knowledge to answer.
 
 === TRADESHOWS ===
-- Use the TRADESHOWS DATA below for all tradeshow info and links.
-- Follow the HOW TO ANSWER rule: pick one and describe it conversationally unless user asks for the full list.
+- When asked about trade shows, articles on trade shows, or "what trade shows are on WatchDNA" — always list ALL of the following with their exact links:
+  1. [Canadian Watches & Jewelry Show](https://watchdna.com/pages/canadian-watches-jewelry-show)
+  2. [Couture Show](https://watchdna.com/pages/coutureshow)
+  3. [Dubai Watch Week](https://watchdna.com/pages/dubai-watch-week)
+  4. [EPHJ](https://watchdna.com/pages/ephj-the-international-trade-show-for-high-precision)
+  5. [Hong Kong Watch & Clock Fair](https://watchdna.com/pages/hongkong-fair)
+  6. [JCK & Luxury](https://watchdna.com/pages/jck)
+  7. [Timepiece Show](https://watchdna.com/pages/timepieceshow)
+  8. [Time to Watches](https://watchdna.com/pages/time-to-watches)
+  9. [Watches & Wonders](https://watchdna.com/pages/watchesandwonders)
+  10. [Wind Up Watch Fair](https://watchdna.com/pages/windupwatchfair)
+  11. [We Love Watches](https://watchdna.com/pages/we-love-watches-2025-participating-brands)
+- After listing them, say "Which one would you like to know more about?"
+- When the user picks one, give a conversational description of that show using TRADESHOWS DATA and link to its page.
 - Never invent tradeshow names or URLs.
 - If asked about specific dates or schedules not in TRADESHOWS DATA, trigger the "don't have the answer" flow above.
 
