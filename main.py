@@ -22,7 +22,7 @@ VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
 
 ACCESSORY_TYPES = {
     "watch winder", "watch roll", "watch case", "safe", "accessories", "accessory",
-    "strap", "desk organizer", "desk organiser", "watch box", "legion safes",
+    "watch strap", "desk organizer", "desk organiser", "watch box", "legion safes",
     "watch certificate", "8 piece watch winder", "16 piece watch winder",
     "6 piece watch winder", "double watch winder", "quad watch winder",
 }
@@ -60,7 +60,7 @@ def _is_accessory(page: dict) -> bool:
     url = page.get("url", "")
     if "/products/" in url:
         title = page.get("title", "").lower()
-        if any(kw in title for kw in ["winder", "safe", "roll", "box", "case", "strap",
+        if any(kw in title for kw in ["winder", "safe", "roll", "watch box", "watch case", "watch strap",
                                        "organizer", "organiser", "storage", "pouch"]):
             return True
     return False
@@ -394,7 +394,7 @@ def load_knowledge(query: str = "", currency: str = "CAD") -> str:
         return "Premium Brands" in page.get("content", "")
 
     is_accessory_query = any(w in query_lower for w in [
-        "winder", "safe", "roll", "case", "strap", "accessory", "accessories", "storage"
+        "winder", "safe", "roll", "watch case", "watch strap", "accessory", "accessories", "storage"
     ])
     is_article_query = any(w in query_lower for w in [
         "article", "latest article", "recent article", "watch enthusiast"
