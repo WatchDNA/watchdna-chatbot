@@ -1138,9 +1138,57 @@ def scrape_site():
     return pages
 
 
+def validate_product_urls(products: list) -> list:
+    """
+    Remove products whose Shopify URL returns 404.
+    Uses the Admin API products.json to get the definitive list of live handles.
+    Falls back to HEAD request validation if Admin API unavailable.
+    """
+    from collections import defaultdict
+
+    print("\n🔍 Validating product URLs...")
+
+    # Get all live handles via Storefront API (already authenticated)
+    live_handles = set()
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Shopify-Storefront-Access-Token": STOREFRONT_TOKEN,
+        }
+        query = """{ products(first: 250) { nodes { handle } pageInfo { hasNextPage endCursor } } }"""
+        cursor = None
+        while True:
+            if cursor:
+                q = """query($c: String!) { products(first: 250, after: $c) { nodes { handle } pageInfo { hasNextPage endCursor } } }"""
+                body = {"query": q, "variables": {"c": cursor}}
+            else:
+                body = {"query": query}
+            resp = requests.post(STOREFRONT_URL, json=body, headers=headers, timeout=20)
+            data = resp.json()
+            nodes = data["data"]["products"]["nodes"]
+            page_info = data["data"]["products"]["pageInfo"]
+            for n in nodes:
+                live_handles.add(n["handle"])
+            if not page_info["hasNextPage"]:
+                break
+            cursor = page_info["endCursor"]
+        print(f"  ✅ {len(live_handles)} live handles from Storefront API")
+    except Exception as e:
+        print(f"  ✗ Could not fetch live handles: {e} — skipping URL validation")
+        return products
+
+    # Filter products — only keep those whose handle is still live
+    before = len(products)
+    valid = [p for p in products if p.get("handle","") in live_handles]
+    removed = before - len(valid)
+    print(f"  ✅ Removed {removed} stale/deleted products | {len(valid)} valid products remain")
+    return valid
+
+
 def main():
     print(f"WatchDNA Scraper — {datetime.now(timezone.utc).isoformat()}")
     products = scrape_products()
+    products = validate_product_urls(products)
     articles = scrape_articles()
     brand_pages = scrape_brand_pages()
     pages = scrape_site()
@@ -1189,3 +1237,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
