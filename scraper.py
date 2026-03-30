@@ -79,6 +79,7 @@ PRIORITY_PATHS = [
     "/pages/the-42nd-hong-kong-watch-clock-design-competition",
     "/pages/local-community", "/pages/faq",
     "/pages/favourite-rssfeeds", "/pages/accesories-directory",
+    "/pages/ourvision", "/pages/contact", "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
 ]
 
 # GraphQL query — @inContext(country: $country) gives real local prices
