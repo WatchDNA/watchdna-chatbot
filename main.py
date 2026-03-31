@@ -1027,6 +1027,22 @@ async def chat(req: ChatRequest):
     if is_store_query:
         store_hint = "\n\nNOTE: Give user the store locator link directly: [Find a Store](https://watchdna.com/tools/storelocator) — tell them to search by brand or city on the map."
 
+    # Budget hint — explicitly tell GPT the price constraint so it can't ignore it
+    budget_hint = ""
+    _ba, _bd = extract_budget(req.message)
+    if not _ba:
+        for h in reversed(req.history[-5:]):
+            if h.get("role") == "user":
+                _ba, _bd = extract_budget(h.get("content", ""))
+                if _ba:
+                    break
+    if _ba and _bd:
+        sym = CURRENCY_SYMBOLS.get(currency, "$")
+        if _bd == "max":
+            budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches UNDER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced BELOW {sym}{_ba:,.0f} {currency}. Do NOT recommend anything priced above this — not even as a suggestion."
+        else:
+            budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches OVER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced ABOVE {sym}{_ba:,.0f} {currency}. Do NOT recommend anything priced below this."
+
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
         best = get_most_expensive(currency)
@@ -1083,7 +1099,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + expensive_hint + brand_product_hint + brands_hint,
+        knowledge=knowledge + store_hint + budget_hint + expensive_hint + brand_product_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
