@@ -609,11 +609,22 @@ def scrape_articles():
                         author = art_author
                     body = art_body
                 # Determine blog handle from URL
-                blog_h = "watch-enthusiast"
-                if "/blogs/press/" in href:
+                # Skip bare listing pages like /blogs/press or /blogs/watch-enthusiast
+                path = href.replace(BASE_URL, "").rstrip("/")
+                if path in ("/blogs/press", "/blogs/watch-enthusiast", "/blogs/watch_enthusiast"):
+                    return None  # skip listing pages
+                STORIES_HANDLES = {"experts_story", "opendial", "ecosystem", "brand_experiences",
+                                   "industry-voices", "watchmaking", "education", "jewellers_story",
+                                   "community", "media", "connected"}
+                url_handle = href.split("/blogs/")[1].split("/")[0] if "/blogs/" in href else ""
+                if "/blogs/press" in href:
                     blog_h = "press"
                     label = "Press Release"
+                elif url_handle in STORIES_HANDLES:
+                    blog_h = url_handle  # keep original handle so filtering works
+                    label = "Community Article (Watch Enthusiast)"
                 else:
+                    blog_h = "watch-enthusiast"
                     label = "Community Article (Watch Enthusiast)"
                 return {
                     "url": href,
