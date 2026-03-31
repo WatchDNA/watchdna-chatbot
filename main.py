@@ -15,7 +15,9 @@ GITHUB_KB_URL = "https://raw.githubusercontent.com/emmad24k/watchdna-chatbot/mai
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/emmad24k/watchdna-chatbot/main/store_brands.csv"
 
 _kb_cache = None
+_kb_cache_time = 0
 _brand_map_cache = None
+KB_CACHE_TTL = 3600  # reload KB every 1 hour so all instances stay fresh
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
 
@@ -126,13 +128,18 @@ def _patch_kb(kb):
 
 
 def get_knowledge_base():
-    global _kb_cache
-    if _kb_cache:
+    global _kb_cache, _kb_cache_time
+    import time
+    if _kb_cache and (time.time() - _kb_cache_time) < KB_CACHE_TTL:
         return _kb_cache
+    # Cache expired or empty — reload
+    _kb_cache = None
+    print(f"[KB] Reloading knowledge base...")
     if Path(KNOWLEDGE_FILE).exists():
         try:
             with open(KNOWLEDGE_FILE) as f:
                 _kb_cache = _patch_kb(json.load(f))
+                _kb_cache_time = time.time()
             print(f"KB loaded: {_kb_cache.get('product_count',0)} products")
             return _kb_cache
         except Exception as e:
@@ -140,6 +147,7 @@ def get_knowledge_base():
     try:
         with urllib.request.urlopen(GITHUB_KB_URL, timeout=20) as r:
             _kb_cache = _patch_kb(json.loads(r.read().decode()))
+        _kb_cache_time = time.time()
         print(f"GitHub KB loaded: {_kb_cache.get('product_count',0)} products")
         return _kb_cache
     except Exception as e:
@@ -321,13 +329,16 @@ def extract_budget(query: str):
     return (None, None)
 
 
-def load_knowledge(query: str = "", currency: str = "CAD") -> str:
+def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tuple = (None, None)) -> str:
     data = get_knowledge_base()
     if not data:
         return "Knowledge base not available."
 
     currency = currency.upper()
-    budget_amount, budget_dir = extract_budget(query)
+    if budget_override != (None, None):
+        budget_amount, budget_dir = budget_override
+    else:
+        budget_amount, budget_dir = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
     query_lower = query.lower()
 
@@ -775,8 +786,8 @@ BRAND LINKS:
 - "Article" or "latest article" refers EXCLUSIVELY to posts from https://watchdna.com/blogs/watch-enthusiast
 - NEVER return a press release as an article. Press releases have "Article Type: Press Release" — ignore them for article queries.
 - Find articles with "Article Type: Community Article (Watch Enthusiast)" — sort by Published date DESCENDING, the highest date is the most recent.
-- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
-- NEVER invent titles, authors, dates, or URLs.
+- Format: [Article Title](exact-url) — by Author
+- NEVER invent titles, authors, or URLs. Do NOT include the published date in the response.
 
 === BRAND ARTICLES & BLOGS ===
 - When asked "blogs about [brand]", "articles on [brand]", "latest [brand] news/posts":
@@ -790,8 +801,8 @@ BRAND LINKS:
 - Find blog posts in WEBSITE CONTENT with "Article Type: Community Article (Watch Enthusiast)" — these are the blog posts.
 - Sort by Published date DESCENDING — the highest date (e.g. 2026-03-20) is the most recent.
 - The most recent = the single entry with the largest Published date value.
-- Format: [Blog Title](exact-url) — Published: YYYY-MM-DD
-- NEVER invent titles, dates, or URLs. ONLY use URLs that appear in WEBSITE CONTENT.
+- Format: [Blog Title](exact-url)
+- NEVER invent titles or URLs. ONLY use URLs that appear in WEBSITE CONTENT. Do NOT include dates.
 - If asked for the "latest" one, return the single entry with the most recent Published date.
 
 === RELATED ARTICLES ===
@@ -997,7 +1008,17 @@ async def chat(req: ChatRequest):
 
     # --- NORMAL KB PATH ---
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
-    knowledge = load_knowledge(req.message, currency=currency)
+
+    # Detect budget early so it can be passed to load_knowledge filter AND budget_hint
+    _ba, _bd = extract_budget(req.message)
+    if not _ba:
+        for _h in reversed(req.history[-10:]):
+            if _h.get("role") == "user":
+                _ba, _bd = extract_budget(_h.get("content", ""))
+                if _ba:
+                    break
+
+    knowledge = load_knowledge(req.message, currency=currency, budget_override=(_ba, _bd))
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     market_brands = get_brands_for_market(currency)
@@ -1029,13 +1050,6 @@ async def chat(req: ChatRequest):
 
     # Budget hint — explicitly tell GPT the price constraint so it can't ignore it
     budget_hint = ""
-    _ba, _bd = extract_budget(req.message)
-    if not _ba:
-        for h in reversed(req.history[-5:]):
-            if h.get("role") == "user":
-                _ba, _bd = extract_budget(h.get("content", ""))
-                if _ba:
-                    break
     if _ba and _bd:
         sym = CURRENCY_SYMBOLS.get(currency, "$")
         if _bd == "max":
