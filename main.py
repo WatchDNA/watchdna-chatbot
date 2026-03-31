@@ -476,19 +476,28 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
         pool = brand_history + matched_articles + other_pages
     elif is_article_query:
         # Articles = watch-enthusiast ONLY. Press releases are never articles.
-        # Also exclude blog listing pages (URL is /blogs/watch-enthusiast with no slug)
+        # Exclude blog listing pages — these have URLs like /blogs/press or /blogs/watch-enthusiast with no slug after
+        LISTING_URLS = {
+            "https://watchdna.com/blogs/press",
+            "https://watchdna.com/blogs/watch-enthusiast",
+            "https://watchdna.com/blogs/watch_enthusiast",
+        }
         we_articles = sorted(
             [p for p in articles
              if p.get("blog","") == "watch-enthusiast"
-             and p.get("title","").upper() not in ("PRESS RELEASES", "WATCH ENTHUSIAST", "WATCH ENTHUSIAST – WATCHDNA")
-             and len(p.get("url","").split("/blogs/")[-1].split("/")) >= 2],
+             and p.get("url","").rstrip("/") not in LISTING_URLS
+             and p.get("title","").upper() not in ("PRESS RELEASES", "WATCH ENTHUSIAST")],
             key=lambda p: p.get("published",""), reverse=True
         )
         pool = we_articles + other_pages
     elif is_blog_query:
-        # Sort blog articles newest-first — put them FIRST so AI sees latest immediately
+        # Blog = pages/stories content (multiple handles) — sorted newest first
+        STORIES_HANDLES = {"experts_story", "opendial", "ecosystem", "brand_experiences",
+                           "industry-voices", "watchmaking", "education", "jewellers_story",
+                           "community", "media", "connected", "stories"}
         blog_articles_sorted = sorted(
-            [p for p in articles if p.get("blog","") in ("watch-enthusiast", "stories")],
+            [p for p in articles if p.get("blog","") in STORIES_HANDLES
+             or ("blogs/" in p.get("url","") and p.get("url","").split("/blogs/")[1].split("/")[0] in STORIES_HANDLES)],
             key=lambda p: p.get("published", ""), reverse=True
         )
         pool = blog_articles_sorted + other_pages
@@ -786,8 +795,8 @@ BRAND LINKS:
 - "Article" or "latest article" refers EXCLUSIVELY to posts from https://watchdna.com/blogs/watch-enthusiast
 - NEVER return a press release as an article. Press releases have "Article Type: Press Release" — ignore them for article queries.
 - Find articles with "Article Type: Community Article (Watch Enthusiast)" — sort by Published date DESCENDING, the highest date is the most recent.
-- Format: [Article Title](exact-url) — by Author
-- NEVER invent titles, authors, or URLs. Do NOT include the published date in the response.
+- Format: [Article Title](exact-url) — by Author, Published: YYYY-MM-DD
+- NEVER invent titles, authors, dates, or URLs.
 
 === BRAND ARTICLES & BLOGS ===
 - When asked "blogs about [brand]", "articles on [brand]", "latest [brand] news/posts":
@@ -796,13 +805,17 @@ BRAND LINKS:
   - Use the slug from BRAND LINKS above (e.g. Rolex → rolex, TAG Heuer → tag-heuer, Rado → rado).
   - Do NOT mention or link any individual articles. Just give the brand page link and say all their articles are listed there.
 
-=== BLOGS (watch-enthusiast) ===
-- "Blog", "latest blog", "blog post", or "latest post" refers to posts from https://watchdna.com/blogs/watch-enthusiast
-- Find blog posts in WEBSITE CONTENT with "Article Type: Community Article (Watch Enthusiast)" — these are the blog posts.
-- Sort by Published date DESCENDING — the highest date (e.g. 2026-03-20) is the most recent.
-- The most recent = the single entry with the largest Published date value.
-- Format: [Blog Title](exact-url)
-- NEVER invent titles or URLs. ONLY use URLs that appear in WEBSITE CONTENT. Do NOT include dates.
+=== BLOGS (pages/stories) ===
+- "Blog", "latest blog", "blog post", or "latest post" refers to stories from https://watchdna.com/pages/stories
+- Blog posts come from these blog handles: experts_story, opendial, ecosystem, brand_experiences, industry-voices, watchmaking, education, jewellers_story, community, media, connected.
+- Find blog posts in WEBSITE CONTENT from those handles — sort by Published date DESCENDING.
+- The most recent = the SINGLE entry with the LARGEST Published date. Compare carefully — 2026-03-28 is newer than 2026-03-20.
+- NEVER pick an entry with a lower date when one with a higher date exists.
+- Format: [Blog Title](exact-url) — Published: YYYY-MM-DD
+- NEVER invent titles, dates, or URLs. ONLY use URLs from WEBSITE CONTENT.
+
+=== ARTICLES (watch-enthusiast blog) ===
+- "Article" or "latest article" refers EXCLUSIVELY to posts from https://watchdna.com/blogs/watch-enthusiast
 - If asked for the "latest" one, return the single entry with the most recent Published date.
 
 === RELATED ARTICLES ===
@@ -840,10 +853,11 @@ BRAND LINKS:
 === CONTRIBUTORS ===
 - Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
 - Each contributor has their own individual URL — always use that specific URL.
-- Format: [Full Name](their-individual-url) — Role/bio
-- Each contributor page in WEBSITE CONTENT shows their bio AND their articles listed under "BRENT'S ARTICLES" / "CAROL'S ARTICLES" etc.
-- When asked "what articles did [contributor] write" — find their page in WEBSITE CONTENT and list the articles shown there with links.
-- Articles in the watch-enthusiast blog have an "Author:" field — use this to match articles to contributors.
+- Format: [Full Name](their-individual-url) — brief role/bio
+- When asked about contributors or "who writes for WatchDNA": list 4-6 contributors with their name as a link and a one-line bio. Then say: "You can visit each contributor's page to read their articles."
+- Do NOT list "N/A" or say articles are not listed. Never show empty article lists.
+- Do NOT try to list individual articles per contributor unless the user specifically asks about one person.
+- If asked about a specific contributor's articles: link to their contributor page and say their articles are listed there.
 
 === STORE LOCATOR ===
 - Always immediately give this link: [Find a Store](https://watchdna.com/tools/storelocator)
