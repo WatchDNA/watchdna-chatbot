@@ -492,13 +492,26 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
         pool = we_articles + other_pages
     elif is_blog_query:
         # Blog = pages/stories content (multiple handles) — sorted newest first
+        # Use URL-based handle detection (most reliable) — blog field may be wrong
         STORIES_HANDLES = {"experts_story", "opendial", "ecosystem", "brand_experiences",
                            "industry-voices", "watchmaking", "education", "jewellers_story",
-                           "community", "media", "connected", "stories"}
+                           "community", "media", "connected", "stories", "watch-enthusiast"}
+        def get_handle(p):
+            url = p.get("url","")
+            if "/blogs/" not in url:
+                return ""
+            return url.split("/blogs/")[1].split("/")[0]
+
         blog_articles_sorted = sorted(
-            [p for p in articles if p.get("blog","") in STORIES_HANDLES
-             or ("blogs/" in p.get("url","") and p.get("url","").split("/blogs/")[1].split("/")[0] in STORIES_HANDLES)],
-            key=lambda p: p.get("published", ""), reverse=True
+            [p for p in articles
+             if get_handle(p) in STORIES_HANDLES
+             and p.get("published","")  # must have a date
+             and get_handle(p) != "history"  # exclude brand history pages
+             and p.get("url","").rstrip("/") not in (
+                 "https://watchdna.com/blogs/press",
+                 "https://watchdna.com/blogs/watch-enthusiast",
+             )],
+            key=lambda p: p.get("published",""), reverse=True
         )
         pool = blog_articles_sorted + other_pages
     elif is_brand_query:
