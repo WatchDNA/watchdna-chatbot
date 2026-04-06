@@ -343,6 +343,71 @@ def fetch_rss_dates() -> dict:
     return url_to_date
 
 
+def fetch_rss_articles(rss_dates: dict, seen_urls: set) -> list:
+    """
+    Discover and scrape any articles in the RSS feed that aren't already in seen_urls.
+    This catches brand-new posts before the listing page crawler finds them.
+    """
+    STORIES_HANDLES = {"experts_story", "opendial", "ecosystem", "brand_experiences",
+                       "industry-voices", "watchmaking", "education", "jewellers_story",
+                       "community", "media", "connected", "watch-enthusiast"}
+    new_articles = []
+    for url, pub_date in rss_dates.items():
+        url = url.split("?")[0].rstrip("/")
+        if url in seen_urls:
+            continue
+        if "/blogs/" not in url:
+            continue
+        parts = url.split("/blogs/")
+        if len(parts) < 2:
+            continue
+        handle = parts[1].split("/")[0]
+        if handle not in STORIES_HANDLES and handle != "press":
+            continue
+        # Scrape the article page
+        try:
+            art_date, author, body = fetch_article_detail(url)
+            date = art_date or pub_date or ""
+            title = url.split("/")[-1].replace("-", " ").title()
+            # Try to get real title from page
+            try:
+                r = requests.get(url, headers=BASE_HEADERS, timeout=10)
+                if r.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(r.text, "html.parser")
+                    h1 = soup.find("h1")
+                    if h1:
+                        title = h1.get_text(strip=True)
+            except Exception:
+                pass
+            if handle == "press":
+                label = "Press Release"
+                blog_h = "press"
+            else:
+                label = "Community Article (Watch Enthusiast)"
+                blog_h = handle
+            content_str = (
+                "Article Type: " + label + "\n"
+                "Article: " + title + "\n"
+                "Published: " + date + "\n"
+                "Author: " + (author or "WatchDNA") + "\n"
+                "URL: " + url + "\n"
+                "Content: " + body[:600]
+            )
+            new_articles.append({
+                "url": url,
+                "title": title,
+                "content": content_str,
+                "published": date,
+                "blog": blog_h,
+            })
+            seen_urls.add(url)
+            print(f"  📡 RSS new article: {title[:50]} ({date})")
+        except Exception as e:
+            print(f"  ✗ RSS article fetch {url}: {e}")
+    return new_articles
+
+
 def scrape_articles():
     """
     Scrape all blog articles from watch-enthusiast and press blogs.
@@ -653,6 +718,12 @@ def scrape_articles():
             print(f"  ✓ /pages/stories: {len(extra_items)} articles added")
     except Exception as e:
         print(f"  ✗ /pages/stories: {e}")
+
+    # Also pull any brand-new articles from RSS that listing pages haven't caught yet
+    rss_article_extras = fetch_rss_articles(rss_dates, seen_urls)
+    if rss_article_extras:
+        articles.extend(rss_article_extras)
+        print(f"  📡 +{len(rss_article_extras)} new articles from RSS")
 
     articles.sort(key=lambda x: x.get("published", ""), reverse=True)
     print(f"  ✅ {len(articles)} total articles")
@@ -1057,14 +1128,36 @@ def scrape_brand_pages() -> list:
         "https://watchdna.com/blogs/history/wise",
         "https://watchdna.com/blogs/history/worden",
         "https://watchdna.com/blogs/history/yema",
+        "https://watchdna.com/blogs/history/franceclat",
         "https://watchdna.com/blogs/history/zenea",
         "https://watchdna.com/blogs/history/zenith",
         "https://watchdna.com/blogs/history/zeppelin",
         "https://watchdna.com/blogs/history/zodiac",
     ]
 
+    # Dynamically discover brand slugs from brands-dna page — catches new brands automatically
+    dynamic_urls = set()
+    try:
+        resp = requests.get(f"{BASE_URL}/pages/brands-dna", headers=BASE_HEADERS, timeout=15)
+        if resp.status_code == 200:
+            from bs4 import BeautifulSoup as _BS
+            soup = _BS(resp.text, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if "/blogs/history/" in href:
+                    full = href if href.startswith("http") else BASE_URL + href
+                    full = full.split("?")[0].rstrip("/")
+                    dynamic_urls.add(full)
+            print(f"  🔍 Discovered {len(dynamic_urls)} brand URLs from brands-dna page")
+    except Exception as e:
+        print(f"  ✗ brands-dna discovery: {e}")
+
+    # Merge static list + dynamic discoveries (dynamic catches new brands)
+    all_brand_urls = list(set(BRAND_URLS) | dynamic_urls)
+    print(f"  📚 Total brand URLs (static + dynamic): {len(all_brand_urls)}")
+
     brand_pages = []
-    print(f"\n🏷️  Fetching {len(BRAND_URLS)} brand history pages (parallel)...")
+    print(f"\n🏷️  Fetching {len(all_brand_urls)} brand history pages (parallel)...")
 
     def fetch_brand(brand_url):
         try:
@@ -1108,7 +1201,7 @@ def scrape_brand_pages() -> list:
             return None
 
     with ThreadPoolExecutor(max_workers=15) as executor:
-        futures = {executor.submit(fetch_brand, url): url for url in BRAND_URLS}
+        futures = {executor.submit(fetch_brand, url): url for url in all_brand_urls}
         for future in as_completed(futures):
             result = future.result()
             if result:
