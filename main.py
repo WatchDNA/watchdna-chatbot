@@ -493,9 +493,15 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
     elif is_blog_query:
         # Blog = pages/stories content (multiple handles) — sorted newest first
         # Use URL-based handle detection (most reliable) — blog field may be wrong
+        # Blogs = all stories + press releases (all live on pages/stories)
         STORIES_HANDLES = {"experts_story", "opendial", "ecosystem", "brand_experiences",
                            "industry-voices", "watchmaking", "education", "jewellers_story",
-                           "community", "media", "connected", "stories", "watch-enthusiast"}
+                           "community", "media", "connected", "stories", "watch-enthusiast",
+                           "press"}
+        LISTING_URLS = {
+            "https://watchdna.com/blogs/press",
+            "https://watchdna.com/blogs/watch-enthusiast",
+        }
         def get_handle(p):
             url = p.get("url","")
             if "/blogs/" not in url:
@@ -505,12 +511,9 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
         blog_articles_sorted = sorted(
             [p for p in articles
              if get_handle(p) in STORIES_HANDLES
-             and p.get("published","")  # must have a date
-             and get_handle(p) != "history"  # exclude brand history pages
-             and p.get("url","").rstrip("/") not in (
-                 "https://watchdna.com/blogs/press",
-                 "https://watchdna.com/blogs/watch-enthusiast",
-             )],
+             and p.get("published","")
+             and get_handle(p) != "history"
+             and p.get("url","").rstrip("/") not in LISTING_URLS],
             key=lambda p: p.get("published",""), reverse=True
         )
         pool = blog_articles_sorted + other_pages
@@ -820,7 +823,7 @@ BRAND LINKS:
 
 === BLOGS (pages/stories) ===
 - "Blog", "latest blog", "blog post", or "latest post" refers to stories from https://watchdna.com/pages/stories
-- Blog posts come from these blog handles: experts_story, opendial, ecosystem, brand_experiences, industry-voices, watchmaking, education, jewellers_story, community, media, connected.
+- Blog posts come from these blog handles: experts_story, opendial, ecosystem, brand_experiences, industry-voices, watchmaking, education, jewellers_story, community, media, connected, press.
 - Find blog posts in WEBSITE CONTENT from those handles — sort by Published date DESCENDING.
 - The most recent = the SINGLE entry with the LARGEST Published date. Compare carefully — 2026-03-28 is newer than 2026-03-20.
 - NEVER pick an entry with a lower date when one with a higher date exists.
