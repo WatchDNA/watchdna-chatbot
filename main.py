@@ -155,6 +155,32 @@ def get_knowledge_base():
         return None
 
 
+def get_latest_blog_from_rss() -> dict | None:
+    """Fetch the latest blog post directly from the RSS feed — always up to date."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+
+    rss_url = "https://watchdna.com/pages/all-blogs-rss"
+    try:
+        with urllib.request.urlopen(rss_url, timeout=10) as r:
+            text = r.read().decode()
+        root = ET.fromstring(text)
+        for item in root.iter("item"):
+            link = item.findtext("link", "").strip().split("?")[0]
+            title = item.findtext("title", "").strip()
+            pub = item.findtext("pubDate", "").strip()
+            if link and title:
+                date = ""
+                try:
+                    date = parsedate_to_datetime(pub).strftime("%Y-%m-%d")
+                except Exception:
+                    date = pub[:10]
+                return {"url": link, "title": title, "published": date}
+    except Exception as e:
+        print(f"[RSS] Error fetching latest blog: {e}")
+    return None
+
+
 def get_most_expensive(currency: str):
     data = get_knowledge_base()
     if not data:
@@ -1091,6 +1117,26 @@ async def chat(req: ChatRequest):
         else:
             budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches OVER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced ABOVE {sym}{_ba:,.0f} {currency}. Do NOT recommend anything priced below this."
 
+    # Latest blog hint — pulled live from RSS, always accurate
+    latest_blog_hint = ""
+    is_blog_q = any(w in req.message.lower() for w in ["latest blog", "recent blog", "newest blog", "latest post", "recent post", "whats the blog", "what's the blog"])
+    if not is_blog_q:
+        for _h in req.history[-4:]:
+            if _h.get("role") == "user" and any(w in _h.get("content","").lower() for w in ["latest blog", "recent blog", "latest post"]):
+                is_blog_q = True
+                break
+    if is_blog_q:
+        latest = get_latest_blog_from_rss()
+        if latest:
+            latest_blog_hint = (
+                f"\n\nLATEST BLOG POST (from live RSS — use this, it is the most recent):\n"
+                f"Title: {latest['title']}\n"
+                f"URL: {latest['url']}\n"
+                f"Published: {latest['published']}\n"
+                f"Format: [{latest['title']}]({latest['url']}) — Published: {latest['published']}"
+            )
+            print(f"[RSS] Latest blog: {latest['title']} ({latest['published']})")
+
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
         best = get_most_expensive(currency)
@@ -1147,7 +1193,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + budget_hint + expensive_hint + brand_product_hint + brands_hint,
+        knowledge=knowledge + store_hint + budget_hint + latest_blog_hint + expensive_hint + brand_product_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
