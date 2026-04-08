@@ -80,7 +80,7 @@ PRIORITY_PATHS = [
     "/pages/local-community", "/pages/faq",
     "/pages/favourite-rssfeeds", "/pages/accesories-directory",
     "/pages/ourvision", "/pages/contact", "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
-    "/blogs/history/franceclat",
+    "/pages/committee", "/blogs/history/franceclat",
 ]
 
 # GraphQL query — @inContext(country: $country) gives real local prices
@@ -1290,6 +1290,37 @@ def validate_product_urls(products: list) -> list:
     return valid
 
 
+def scrape_priority_pages() -> list:
+    """
+    Directly scrape the most important pages that must always be in the KB.
+    These are scraped individually to guarantee inclusion regardless of site crawl limits.
+    """
+    MUST_HAVE = [
+        "/pages/committee", "/pages/ourvision", "/pages/contact",
+        "/pages/watchmaking", "/pages/brands-dna", "/pages/groups",
+        "/pages/redbar", "/pages/worldwatchday", "/pages/1fortheplanet",
+        "/pages/b1g1-business-for-good", "/pages/faq", "/pages/contributors",
+        "/pages/watch-aficionados", "/pages/our-vision",
+        "/blogs/history/franceclat",
+    ]
+    pages = []
+    print("\n📌 Scraping priority pages...")
+    for path in MUST_HAVE:
+        url = BASE_URL + path
+        try:
+            resp = requests.get(url, headers=BASE_HEADERS, timeout=12)
+            if resp.status_code == 200 and "text/html" in resp.headers.get("Content-Type", ""):
+                soup = BeautifulSoup(resp.text, "html.parser")
+                text = get_text(soup)
+                title = soup.title.string.strip() if soup.title else url
+                if len(text) > 100:
+                    pages.append({"url": url, "title": title, "content": text[:5000]})
+                    print(f"  ✓ {title[:60]}")
+        except Exception as e:
+            print(f"  ✗ {url}: {e}")
+    return pages
+
+
 def main():
     print(f"WatchDNA Scraper — {datetime.now(timezone.utc).isoformat()}")
     products = scrape_products()
@@ -1297,8 +1328,14 @@ def main():
     articles = scrape_articles()
     brand_pages = scrape_brand_pages()
     pages = scrape_site()
-    # Merge brand pages — override any existing /blogs/history/ entries from site crawl
+    # Always add priority pages — guarantees committee, ourvision, contact etc are in KB
+    priority = scrape_priority_pages()
     existing_urls = {p["url"] for p in pages}
+    for pp in priority:
+        if pp["url"] not in existing_urls:
+            pages.append(pp)
+            existing_urls.add(pp["url"])
+    # Merge brand pages
     for bp in brand_pages:
         if bp["url"] not in existing_urls:
             pages.append(bp)
