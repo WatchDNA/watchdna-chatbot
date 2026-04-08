@@ -915,6 +915,10 @@ KEY PAGES:
 - Contact / Get in Touch: https://watchdna.com/pages/contact
 - Our Vision / Non-profits & Causes: https://watchdna.com/pages/ourvision
 - Watchmaking: https://watchdna.com/pages/watchmaking
+- Committee: https://watchdna.com/pages/committee
+
+=== COMMITTEE ===
+- If anyone asks about the WatchDNA committee, advisory board, or who runs WatchDNA: link to [WatchDNA Committee](https://watchdna.com/pages/committee) and use content from that page in WEBSITE CONTENT.
 
 === WATCHMAKING ===
 - If anyone asks about watchmaking, how watches are made, horology, craftsmanship, or watch movements: use the content from WEBSITE CONTENT for https://watchdna.com/pages/watchmaking and always link to [Watchmaking](https://watchdna.com/pages/watchmaking). Never say you don't have this info.
