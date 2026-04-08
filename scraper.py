@@ -80,6 +80,7 @@ PRIORITY_PATHS = [
     "/pages/local-community", "/pages/faq",
     "/pages/favourite-rssfeeds", "/pages/accesories-directory",
     "/pages/ourvision", "/pages/contact", "/pages/1fortheplanet", "/pages/b1g1-business-for-good",
+    "/blogs/history/franceclat",
 ]
 
 # GraphQL query — @inContext(country: $country) gives real local prices
@@ -1128,7 +1129,6 @@ def scrape_brand_pages() -> list:
         "https://watchdna.com/blogs/history/wise",
         "https://watchdna.com/blogs/history/worden",
         "https://watchdna.com/blogs/history/yema",
-        "https://watchdna.com/blogs/history/franceclat",
         "https://watchdna.com/blogs/history/zenea",
         "https://watchdna.com/blogs/history/zenith",
         "https://watchdna.com/blogs/history/zeppelin",
