@@ -573,21 +573,22 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
             return 1 if ("Premium Brands" in page.get("content","") or vendor in PREMIUM_BRANDS) else 0
 
         if requested_colors:
-            scored = sorted(watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
+            # Color queries: premium only, sorted by color match then premium score
+            premium_watches = [w for w in watches if "Premium Brands" in w.get("content","") or premium_score(w) == 1]
+            scored = sorted(premium_watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
             pool = scored + other_pages + articles
         elif keywords:
-            top = [w for w in watches if score(w) > 0]
-            rest = [w for w in watches if score(w) == 0]
+            # Keyword queries: premium first, non-premium excluded
+            premium_watches = [w for w in watches if "Premium Brands" in w.get("content","") or premium_score(w) == 1]
+            top = [w for w in premium_watches if score(w) > 0]
+            rest = [w for w in premium_watches if score(w) == 0]
             top_sorted = sorted(top, key=lambda p: (premium_score(p), score(p)), reverse=True)
-            random.shuffle(rest)
             pool = top_sorted + rest + other_pages + articles
         else:
-            # No keywords: KB-tagged premium first, then hardcoded premium, then rest shuffled
+            # No keywords: premium only — non-premium watches never recommended
             kb_premium   = [w for w in watches if "Premium Brands" in w.get("content","")]
             list_premium = [w for w in watches if "Premium Brands" not in w.get("content","") and premium_score(w) == 1]
-            non_premium  = [w for w in watches if "Premium Brands" not in w.get("content","") and premium_score(w) == 0]
-            random.shuffle(non_premium)
-            pool = kb_premium + list_premium + non_premium + other_pages + articles
+            pool = kb_premium + list_premium + other_pages + articles
 
     context = ""
     for page in pool:
@@ -792,9 +793,11 @@ Then offer to help them find a watch through the directory or locate an authoriz
 - User's selected currency: {currency}
 - ALL products in WEBSITE CONTENT are already filtered to only those available in the {currency} market.
 - Show prices exactly as in the content. Do NOT convert or calculate.
-- CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. If you cannot find a matching product in WEBSITE CONTENT, say so — do NOT invent product names, brands, prices, or URLs from your training knowledge. Tissot, Seiko, TAG Heuer, Tudor, Rolex etc. may be brands you know but if their products are not in WEBSITE CONTENT for this market, do NOT recommend them.
-- When asked to compare brands or show watches from multiple brands: ONLY list watches that appear in WEBSITE CONTENT for the current currency market. If a brand has no products in WEBSITE CONTENT, say "X is not currently available on WatchDNA in [currency]" — never invent products for that brand.
-- EVERY product you recommend must have its exact title and URL copied verbatim from WEBSITE CONTENT. Product names like "Adventure Sport Automatic" or "Freedom 60 Automatic" that have no URL in WEBSITE CONTENT are HALLUCINATIONS — never do this.
+- CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. Never invent product names, brands, prices, or URLs.
+- PREMIUM BRANDS ONLY: Always recommend from premium/featured brands first. If the user asks for watches with any filter (budget, color, strap, style etc.), ONLY recommend watches tagged "Premium Brands" in WEBSITE CONTENT. Non-premium watches should never be recommended unless explicitly asked about a specific non-premium brand.
+- If no premium brand watches match the user's criteria: say "I couldn't find a premium watch matching that criteria on WatchDNA. Browse the full collection and filter by your specs here: [All Watches](https://watchdna.com/collections/watches)" — never recommend a non-premium watch as a substitute.
+- When asked to compare brands or show watches from multiple brands: ONLY list watches from WEBSITE CONTENT for the current currency market. If a brand has no products, say so — never invent products.
+- EVERY product you recommend must have its exact title and URL from WEBSITE CONTENT. Never hallucinate product names.
 - STRICT FORMAT for EACH watch recommendation — no exceptions:
   **[Product Name](url)** — {symbol}X.XX {currency}
   Brief description in 1-2 sentences.
@@ -916,6 +919,10 @@ KEY PAGES:
 - Our Vision / Non-profits & Causes: https://watchdna.com/pages/ourvision
 - Watchmaking: https://watchdna.com/pages/watchmaking
 - Committee: https://watchdna.com/pages/committee
+- Tradeshows Calendar: https://watchdna.com/pages/tradeshows
+
+=== TRADESHOWS CALENDAR ===
+- If anyone asks about upcoming tradeshows, tradeshow calendar, or when tradeshows are: link to [Tradeshows Calendar](https://watchdna.com/pages/tradeshows) and use content from that page in WEBSITE CONTENT.
 
 === COMMITTEE ===
 - If anyone asks about the WatchDNA committee, advisory board, or who runs WatchDNA: link to [WatchDNA Committee](https://watchdna.com/pages/committee) and use content from that page in WEBSITE CONTENT.
