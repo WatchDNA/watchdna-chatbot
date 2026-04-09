@@ -1302,6 +1302,7 @@ def scrape_priority_pages() -> list:
         "/pages/b1g1-business-for-good", "/pages/faq", "/pages/contributors",
         "/pages/watch-aficionados", "/pages/our-vision",
         "/blogs/history/franceclat",
+        "/pages/tradeshows",
     ]
     pages = []
     print("\n📌 Scraping priority pages...")
