@@ -30,22 +30,9 @@ ACCESSORY_TYPES = {
 }
 
 
-PREMIUM_BRANDS = {
-    "rolex", "patek philippe", "audemars piguet", "vacheron constantin",
-    "a. lange & söhne", "a lange sohne", "richard mille", "fp journe",
-    "jaeger-lecoultre", "jaeger lecoultre", "iwc", "iwc schaffhausen",
-    "breguet", "blancpain", "glashütte original", "glashutte original",
-    "chopard", "hublot", "tag heuer", "omega", "tudor", "breitling",
-    "cartier", "panerai", "zenith", "longines", "rado", "tissot",
-    "hamilton", "oris", "nomos", "nomos glashütte", "grand seiko",
-    "mb&f", "urwerk", "h. moser", "h moser", "f.p. journe",
-    "ulysse nardin", "girard perregaux", "piaget", "roger dubuis",
-    "bell & ross", "bell and ross", "baume et mercier", "frederique constant",
-    "frédérique constant", "alpina", "norqain", "certina", "mido",
-    "raymond weil", "movado", "montblanc", "ebel", "eterna",
-    "doxa", "tudor", "fortis", "sinn", "junghans", "stowa", "laco",
-    "seiko", "grand seiko", "citizen", "orient"
-}
+# Premium brands are determined solely by the "Premium Brands" Shopify tag in the KB.
+# The owner controls this by tagging products in Shopify — no hardcoded list.
+PREMIUM_BRANDS = set()  # intentionally empty
 
 
 def _is_accessory(page: dict) -> bool:
