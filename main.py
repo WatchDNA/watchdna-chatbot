@@ -147,6 +147,29 @@ def get_knowledge_base():
         return None
 
 
+def get_latest_from_rss() -> dict | None:
+    """Fetch the latest post directly from the RSS feed — always current."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    try:
+        with urllib.request.urlopen("https://watchdna.com/pages/all-blogs-rss", timeout=10) as r:
+            root = ET.fromstring(r.read().decode())
+        for item in root.iter("item"):
+            link = item.findtext("link", "").strip().split("?")[0]
+            title = item.findtext("title", "").strip()
+            pub = item.findtext("pubDate", "").strip()
+            if link and title:
+                date = ""
+                try:
+                    date = parsedate_to_datetime(pub).strftime("%Y-%m-%d")
+                except Exception:
+                    date = pub[:10]
+                return {"url": link, "title": title, "published": date}
+    except Exception as e:
+        print(f"[RSS] Error: {e}")
+    return None
+
+
 def get_most_expensive(currency: str):
     data = get_knowledge_base()
     if not data:
@@ -1012,6 +1035,29 @@ async def chat(req: ChatRequest):
     if is_store_query:
         store_hint = "\n\nNOTE: Give user the store locator link directly: [Find a Store](https://watchdna.com/tools/storelocator) — tell them to search by brand or city on the map."
 
+    # Latest blog/article — pulled live from RSS every request
+    latest_rss_hint = ""
+    LATEST_TRIGGERS = ["latest blog", "recent blog", "latest post", "latest article",
+                       "recent article", "newest article", "newest blog", "whats the latest",
+                       "what's the latest", "most recent blog", "most recent article"]
+    is_latest_q = any(w in req.message.lower() for w in LATEST_TRIGGERS)
+    if not is_latest_q:
+        for _h in req.history[-4:]:
+            if _h.get("role") == "user" and any(w in _h.get("content","").lower() for w in LATEST_TRIGGERS):
+                is_latest_q = True
+                break
+    if is_latest_q:
+        latest = get_latest_from_rss()
+        if latest:
+            latest_rss_hint = (
+                f"\n\nLATEST POST FROM RSS (most recent on site — use this):\n"
+                f"Title: {latest['title']}\n"
+                f"URL: {latest['url']}\n"
+                f"Published: {latest['published']}\n"
+                f"Respond with: [{latest['title']}]({latest['url']}) — Published: {latest['published']}"
+            )
+            print(f"[RSS] Latest: {latest['title']} ({latest['published']})")
+
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
         best = get_most_expensive(currency)
@@ -1068,7 +1114,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + expensive_hint + brand_product_hint + brands_hint,
+        knowledge=knowledge + store_hint + latest_rss_hint + expensive_hint + brand_product_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
