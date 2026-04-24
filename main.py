@@ -1053,8 +1053,7 @@ async def chat(req: ChatRequest):
                 f"\n\nLATEST POST FROM RSS (most recent on site — use this):\n"
                 f"Title: {latest['title']}\n"
                 f"URL: {latest['url']}\n"
-                f"Published: {latest['published']}\n"
-                f"Respond with: [{latest['title']}]({latest['url']}) — Published: {latest['published']}"
+                f"Respond with ONLY: [{latest['title']}]({latest['url']}) — no date, no description, just the linked title."
             )
             print(f"[RSS] Latest: {latest['title']} ({latest['published']})")
 
