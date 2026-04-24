@@ -15,9 +15,7 @@ GITHUB_KB_URL = "https://raw.githubusercontent.com/emmad24k/watchdna-chatbot/mai
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/emmad24k/watchdna-chatbot/main/store_brands.csv"
 
 _kb_cache = None
-_kb_cache_time = 0
 _brand_map_cache = None
-KB_CACHE_TTL = 3600  # reload KB every 1 hour so all instances stay fresh
 CURRENCY_SYMBOLS = {"CAD": "$", "USD": "$", "GBP": "£", "CHF": "CHF ", "EUR": "€"}
 VALID_CURRENCIES = ["CAD", "USD", "GBP", "CHF", "EUR"]
 
@@ -30,9 +28,22 @@ ACCESSORY_TYPES = {
 }
 
 
-# Premium brands are determined solely by the "Premium Brands" Shopify tag in the KB.
-# The owner controls this by tagging products in Shopify — no hardcoded list.
-PREMIUM_BRANDS = set()  # intentionally empty
+PREMIUM_BRANDS = {
+    "rolex", "patek philippe", "audemars piguet", "vacheron constantin",
+    "a. lange & söhne", "a lange sohne", "richard mille", "fp journe",
+    "jaeger-lecoultre", "jaeger lecoultre", "iwc", "iwc schaffhausen",
+    "breguet", "blancpain", "glashütte original", "glashutte original",
+    "chopard", "hublot", "tag heuer", "omega", "tudor", "breitling",
+    "cartier", "panerai", "zenith", "longines", "rado", "tissot",
+    "hamilton", "oris", "nomos", "nomos glashütte", "grand seiko",
+    "mb&f", "urwerk", "h. moser", "h moser", "f.p. journe",
+    "ulysse nardin", "girard perregaux", "piaget", "roger dubuis",
+    "bell & ross", "bell and ross", "baume et mercier", "frederique constant",
+    "frédérique constant", "alpina", "norqain", "certina", "mido",
+    "raymond weil", "movado", "montblanc", "ebel", "eterna",
+    "doxa", "tudor", "fortis", "sinn", "junghans", "stowa", "laco",
+    "seiko", "grand seiko", "citizen", "orient"
+}
 
 
 def _is_accessory(page: dict) -> bool:
@@ -115,18 +126,13 @@ def _patch_kb(kb):
 
 
 def get_knowledge_base():
-    global _kb_cache, _kb_cache_time
-    import time
-    if _kb_cache and (time.time() - _kb_cache_time) < KB_CACHE_TTL:
+    global _kb_cache
+    if _kb_cache:
         return _kb_cache
-    # Cache expired or empty — reload
-    _kb_cache = None
-    print(f"[KB] Reloading knowledge base...")
     if Path(KNOWLEDGE_FILE).exists():
         try:
             with open(KNOWLEDGE_FILE) as f:
                 _kb_cache = _patch_kb(json.load(f))
-                _kb_cache_time = time.time()
             print(f"KB loaded: {_kb_cache.get('product_count',0)} products")
             return _kb_cache
         except Exception as e:
@@ -134,38 +140,11 @@ def get_knowledge_base():
     try:
         with urllib.request.urlopen(GITHUB_KB_URL, timeout=20) as r:
             _kb_cache = _patch_kb(json.loads(r.read().decode()))
-        _kb_cache_time = time.time()
         print(f"GitHub KB loaded: {_kb_cache.get('product_count',0)} products")
         return _kb_cache
     except Exception as e:
         print(f"GitHub KB error: {e}")
         return None
-
-
-def get_latest_blog_from_rss() -> dict | None:
-    """Fetch the latest blog post directly from the RSS feed — always up to date."""
-    import xml.etree.ElementTree as ET
-    from email.utils import parsedate_to_datetime
-
-    rss_url = "https://watchdna.com/pages/all-blogs-rss"
-    try:
-        with urllib.request.urlopen(rss_url, timeout=10) as r:
-            text = r.read().decode()
-        root = ET.fromstring(text)
-        for item in root.iter("item"):
-            link = item.findtext("link", "").strip().split("?")[0]
-            title = item.findtext("title", "").strip()
-            pub = item.findtext("pubDate", "").strip()
-            if link and title:
-                date = ""
-                try:
-                    date = parsedate_to_datetime(pub).strftime("%Y-%m-%d")
-                except Exception:
-                    date = pub[:10]
-                return {"url": link, "title": title, "published": date}
-    except Exception as e:
-        print(f"[RSS] Error fetching latest blog: {e}")
-    return None
 
 
 def get_most_expensive(currency: str):
@@ -342,16 +321,13 @@ def extract_budget(query: str):
     return (None, None)
 
 
-def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tuple = (None, None)) -> str:
+def load_knowledge(query: str = "", currency: str = "CAD") -> str:
     data = get_knowledge_base()
     if not data:
         return "Knowledge base not available."
 
     currency = currency.upper()
-    if budget_override != (None, None):
-        budget_amount, budget_dir = budget_override
-    else:
-        budget_amount, budget_dir = extract_budget(query)
+    budget_amount, budget_dir = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
     query_lower = query.lower()
 
@@ -489,45 +465,20 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
         pool = brand_history + matched_articles + other_pages
     elif is_article_query:
         # Articles = watch-enthusiast ONLY. Press releases are never articles.
-        # Exclude blog listing pages — these have URLs like /blogs/press or /blogs/watch-enthusiast with no slug after
-        LISTING_URLS = {
-            "https://watchdna.com/blogs/press",
-            "https://watchdna.com/blogs/watch-enthusiast",
-            "https://watchdna.com/blogs/watch_enthusiast",
-        }
+        # Also exclude blog listing pages (URL is /blogs/watch-enthusiast with no slug)
         we_articles = sorted(
             [p for p in articles
              if p.get("blog","") == "watch-enthusiast"
-             and p.get("url","").rstrip("/") not in LISTING_URLS
-             and p.get("title","").upper() not in ("PRESS RELEASES", "WATCH ENTHUSIAST")],
+             and p.get("title","").upper() not in ("PRESS RELEASES", "WATCH ENTHUSIAST", "WATCH ENTHUSIAST – WATCHDNA")
+             and len(p.get("url","").split("/blogs/")[-1].split("/")) >= 2],
             key=lambda p: p.get("published",""), reverse=True
         )
         pool = we_articles + other_pages
     elif is_blog_query:
-        # Blog = pages/stories content (multiple handles) — sorted newest first
-        # Use URL-based handle detection (most reliable) — blog field may be wrong
-        # Blogs = all stories + press releases (all live on pages/stories)
-        STORIES_HANDLES = {"experts_story", "opendial", "ecosystem", "brand_experiences",
-                           "industry-voices", "watchmaking", "education", "jewellers_story",
-                           "community", "media", "connected", "stories", "watch-enthusiast",
-                           "press"}
-        LISTING_URLS = {
-            "https://watchdna.com/blogs/press",
-            "https://watchdna.com/blogs/watch-enthusiast",
-        }
-        def get_handle(p):
-            url = p.get("url","")
-            if "/blogs/" not in url:
-                return ""
-            return url.split("/blogs/")[1].split("/")[0]
-
+        # Sort blog articles newest-first — put them FIRST so AI sees latest immediately
         blog_articles_sorted = sorted(
-            [p for p in articles
-             if get_handle(p) in STORIES_HANDLES
-             and p.get("published","")
-             and get_handle(p) != "history"
-             and p.get("url","").rstrip("/") not in LISTING_URLS],
-            key=lambda p: p.get("published",""), reverse=True
+            [p for p in articles if p.get("blog","") in ("watch-enthusiast", "stories")],
+            key=lambda p: p.get("published", ""), reverse=True
         )
         pool = blog_articles_sorted + other_pages
     elif is_brand_query:
@@ -560,22 +511,21 @@ def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tupl
             return 1 if ("Premium Brands" in page.get("content","") or vendor in PREMIUM_BRANDS) else 0
 
         if requested_colors:
-            # Color queries: premium only, sorted by color match then premium score
-            premium_watches = [w for w in watches if "Premium Brands" in w.get("content","") or premium_score(w) == 1]
-            scored = sorted(premium_watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
+            scored = sorted(watches, key=lambda p: (score(p), premium_score(p)), reverse=True)
             pool = scored + other_pages + articles
         elif keywords:
-            # Keyword queries: premium first, non-premium excluded
-            premium_watches = [w for w in watches if "Premium Brands" in w.get("content","") or premium_score(w) == 1]
-            top = [w for w in premium_watches if score(w) > 0]
-            rest = [w for w in premium_watches if score(w) == 0]
+            top = [w for w in watches if score(w) > 0]
+            rest = [w for w in watches if score(w) == 0]
             top_sorted = sorted(top, key=lambda p: (premium_score(p), score(p)), reverse=True)
+            random.shuffle(rest)
             pool = top_sorted + rest + other_pages + articles
         else:
-            # No keywords: premium only — non-premium watches never recommended
+            # No keywords: KB-tagged premium first, then hardcoded premium, then rest shuffled
             kb_premium   = [w for w in watches if "Premium Brands" in w.get("content","")]
             list_premium = [w for w in watches if "Premium Brands" not in w.get("content","") and premium_score(w) == 1]
-            pool = kb_premium + list_premium + other_pages + articles
+            non_premium  = [w for w in watches if "Premium Brands" not in w.get("content","") and premium_score(w) == 0]
+            random.shuffle(non_premium)
+            pool = kb_premium + list_premium + non_premium + other_pages + articles
 
     context = ""
     for page in pool:
@@ -757,11 +707,6 @@ SYSTEM_PROMPT = """You are WatchBot, the AI assistant for WatchDNA.com — a glo
 
 PERSONALITY: Passionate watch enthusiast, knowledgeable, direct, conversational, friendly. Never say "As an AI".
 
-=== WHAT WATCHDNA IS — CRITICAL ===
-WatchDNA is NOT an e-commerce store and does NOT sell watches. If anyone asks "do you sell watches", "can I buy a watch here", "how do I purchase", or anything implying WatchDNA sells products — always clarify:
-"WatchDNA is not an e-commerce store — we don't sell watches directly. We're building a comprehensive directory and community for watch lovers, giving you the opportunity to compare collections, explore free listings, and access trusted content, all in one place. Our mission is to be the go-to directory for all things watches."
-Then offer to help them find a watch through the directory or locate an authorized dealer.
-
 === HOW TO ANSWER — MOST IMPORTANT RULE ===
 - When asked a general question like "tell me about brands", "tell me about tradeshows", "tell me about contributors" — pick ONE interesting one and tell them about it in a conversational paragraph. Do NOT list everything.
 - End with something like "Want to hear about another one?" or "Ask me about a specific one!"
@@ -780,11 +725,9 @@ Then offer to help them find a watch through the directory or locate an authoriz
 - User's selected currency: {currency}
 - ALL products in WEBSITE CONTENT are already filtered to only those available in the {currency} market.
 - Show prices exactly as in the content. Do NOT convert or calculate.
-- CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. Never invent product names, brands, prices, or URLs.
-- PREMIUM BRANDS ONLY: Always recommend from premium/featured brands first. If the user asks for watches with any filter (budget, color, strap, style etc.), ONLY recommend watches tagged "Premium Brands" in WEBSITE CONTENT. Non-premium watches should never be recommended unless explicitly asked about a specific non-premium brand.
-- If no premium brand watches match the user's criteria: say "I couldn't find a premium watch matching that criteria on WatchDNA. Browse the full collection and filter by your specs here: [All Watches](https://watchdna.com/collections/watches)" — never recommend a non-premium watch as a substitute.
-- When asked to compare brands or show watches from multiple brands: ONLY list watches from WEBSITE CONTENT for the current currency market. If a brand has no products, say so — never invent products.
-- EVERY product you recommend must have its exact title and URL from WEBSITE CONTENT. Never hallucinate product names.
+- CRITICAL: ONLY recommend products that physically appear in WEBSITE CONTENT below with a real URL. If you cannot find a matching product in WEBSITE CONTENT, say so — do NOT invent product names, brands, prices, or URLs from your training knowledge. Tissot, Seiko, TAG Heuer, Tudor, Rolex etc. may be brands you know but if their products are not in WEBSITE CONTENT for this market, do NOT recommend them.
+- When asked to compare brands or show watches from multiple brands: ONLY list watches that appear in WEBSITE CONTENT for the current currency market. If a brand has no products in WEBSITE CONTENT, say "X is not currently available on WatchDNA in [currency]" — never invent products for that brand.
+- EVERY product you recommend must have its exact title and URL copied verbatim from WEBSITE CONTENT. Product names like "Adventure Sport Automatic" or "Freedom 60 Automatic" that have no URL in WEBSITE CONTENT are HALLUCINATIONS — never do this.
 - STRICT FORMAT for EACH watch recommendation — no exceptions:
   **[Product Name](url)** — {symbol}X.XX {currency}
   Brief description in 1-2 sentences.
@@ -816,7 +759,6 @@ WATCH RECOMMENDATION FLOW — CRITICAL:
 - NEVER contradict what the scraped page says. If the page says "HEADQUARTERS: Tennessee, USA" use that. If it says "FOUNDED: 2014" use that.
 - Every brand MUST have a link in the FIRST response — never wait to be asked. Format: [Brand Name](https://watchdna.com/blogs/history/[slug]). Examples: Rolex → /blogs/history/rolex, TAG Heuer → /blogs/history/tag-heuer, Glock Watches → /blogs/history/glock-watches.
 - If a brand is NOT in WEBSITE CONTENT, immediately say it's not on WatchDNA yet and include this link: [Explore all brands on WatchDNA](https://watchdna.com/pages/brands-dna). Never make up a link for unknown brands.
-- FRANCECLAT is NOT a watch brand — it is a French trade organization. If asked about Franceclat, use the content from https://watchdna.com/blogs/history/franceclat in WEBSITE CONTENT and link to it. Do NOT describe it as a watch brand.
 - When listing multiple brands (e.g. "Indian watch brands"), every single brand in the list MUST have its link included — never list a brand name without a link.
 - When asked about brands from a specific country, use BRANDS BY COUNTRY data.
 - When asked about brand groups link to their history page: [Group Name](https://watchdna.com/blogs/history/[slug]). Also add: "You can explore all brand groups at [Brand Groups](https://watchdna.com/pages/groups)"
@@ -838,17 +780,13 @@ BRAND LINKS:
   - Use the slug from BRAND LINKS above (e.g. Rolex → rolex, TAG Heuer → tag-heuer, Rado → rado).
   - Do NOT mention or link any individual articles. Just give the brand page link and say all their articles are listed there.
 
-=== BLOGS (pages/stories) ===
-- "Blog", "latest blog", "blog post", or "latest post" refers to stories from https://watchdna.com/pages/stories
-- Blog posts come from these blog handles: experts_story, opendial, ecosystem, brand_experiences, industry-voices, watchmaking, education, jewellers_story, community, media, connected, press.
-- Find blog posts in WEBSITE CONTENT from those handles — sort by Published date DESCENDING.
-- The most recent = the SINGLE entry with the LARGEST Published date. Compare carefully — 2026-03-28 is newer than 2026-03-20.
-- NEVER pick an entry with a lower date when one with a higher date exists.
+=== BLOGS (watch-enthusiast) ===
+- "Blog", "latest blog", "blog post", or "latest post" refers to posts from https://watchdna.com/blogs/watch-enthusiast
+- Find blog posts in WEBSITE CONTENT with "Article Type: Community Article (Watch Enthusiast)" — these are the blog posts.
+- Sort by Published date DESCENDING — the highest date (e.g. 2026-03-20) is the most recent.
+- The most recent = the single entry with the largest Published date value.
 - Format: [Blog Title](exact-url) — Published: YYYY-MM-DD
-- NEVER invent titles, dates, or URLs. ONLY use URLs from WEBSITE CONTENT.
-
-=== ARTICLES (watch-enthusiast blog) ===
-- "Article" or "latest article" refers EXCLUSIVELY to posts from https://watchdna.com/blogs/watch-enthusiast
+- NEVER invent titles, dates, or URLs. ONLY use URLs that appear in WEBSITE CONTENT.
 - If asked for the "latest" one, return the single entry with the most recent Published date.
 
 === RELATED ARTICLES ===
@@ -862,7 +800,8 @@ BRAND LINKS:
 - Once the user says yes (or any affirmative), the system will automatically use general AI knowledge to answer.
 
 === TRADESHOWS ===
-- When asked about trade shows, articles on trade shows, or "what trade shows are on WatchDNA" — always list ALL of the following with their exact links:
+- When ANYONE asks about tradeshows, upcoming shows, next tradeshow, tradeshow dates, tradeshow calendar, or where/when shows are: ALWAYS immediately give this link: [Tradeshows Calendar](https://watchdna.com/pages/tradeshows). Do NOT say you don't have that info.
+- Then list individual shows if the user wants more detail:
   1. [Canadian Watches & Jewelry Show](https://watchdna.com/pages/canadian-watches-jewelry-show)
   2. [Couture Show](https://watchdna.com/pages/coutureshow)
   3. [Dubai Watch Week](https://watchdna.com/pages/dubai-watch-week)
@@ -874,10 +813,7 @@ BRAND LINKS:
   9. [Watches & Wonders](https://watchdna.com/pages/watchesandwonders)
   10. [Wind Up Watch Fair](https://watchdna.com/pages/windupwatchfair)
   11. [We Love Watches](https://watchdna.com/pages/we-love-watches-2025-participating-brands)
-- After listing them, say "Which one would you like to know more about?"
-- When the user picks one, give a conversational description of that show using TRADESHOWS DATA and link to its page.
 - Never invent tradeshow names or URLs.
-- If asked about specific dates or schedules not in TRADESHOWS DATA, trigger the "don't have the answer" flow above.
 
 === AWARDS ===
 - Use the AWARDS DATA below for all award info and links.
@@ -886,11 +822,10 @@ BRAND LINKS:
 === CONTRIBUTORS ===
 - Use ONLY the CONTRIBUTORS DATA below to answer contributor questions.
 - Each contributor has their own individual URL — always use that specific URL.
-- Format: [Full Name](their-individual-url) — brief role/bio
-- When asked about contributors or "who writes for WatchDNA": list 4-6 contributors with their name as a link and a one-line bio. Then say: "You can visit each contributor's page to read their articles."
-- Do NOT list "N/A" or say articles are not listed. Never show empty article lists.
-- Do NOT try to list individual articles per contributor unless the user specifically asks about one person.
-- If asked about a specific contributor's articles: link to their contributor page and say their articles are listed there.
+- Format: [Full Name](their-individual-url) — Role/bio
+- Each contributor page in WEBSITE CONTENT shows their bio AND their articles listed under "BRENT'S ARTICLES" / "CAROL'S ARTICLES" etc.
+- When asked "what articles did [contributor] write" — find their page in WEBSITE CONTENT and list the articles shown there with links.
+- Articles in the watch-enthusiast blog have an "Author:" field — use this to match articles to contributors.
 
 === STORE LOCATOR ===
 - Always immediately give this link: [Find a Store](https://watchdna.com/tools/storelocator)
@@ -902,26 +837,6 @@ KEY PAGES:
 - Brands Directory: https://watchdna.com/pages/brands-dna
 - Watch Enthusiast: https://watchdna.com/blogs/watch-enthusiast
 - Press Releases: https://watchdna.com/blogs/press
-- Contact / Get in Touch: https://watchdna.com/pages/contact
-- Our Vision / Non-profits & Causes: https://watchdna.com/pages/ourvision
-- Watchmaking: https://watchdna.com/pages/watchmaking
-- Committee: https://watchdna.com/pages/committee
-- Tradeshows Calendar: https://watchdna.com/pages/tradeshows
-
-=== TRADESHOWS CALENDAR ===
-- If anyone asks about upcoming tradeshows, tradeshow calendar, or when tradeshows are: link to [Tradeshows Calendar](https://watchdna.com/pages/tradeshows) and use content from that page in WEBSITE CONTENT.
-
-=== COMMITTEE ===
-- If anyone asks about the WatchDNA committee, advisory board, or who runs WatchDNA: link to [WatchDNA Committee](https://watchdna.com/pages/committee) and use content from that page in WEBSITE CONTENT.
-
-=== WATCHMAKING ===
-- If anyone asks about watchmaking, how watches are made, horology, craftsmanship, or watch movements: use the content from WEBSITE CONTENT for https://watchdna.com/pages/watchmaking and always link to [Watchmaking](https://watchdna.com/pages/watchmaking). Never say you don't have this info.
-
-=== CONTACT ===
-- If anyone asks how to contact WatchDNA, reach out, get in touch, or send a message: always link to [Contact WatchDNA](https://watchdna.com/pages/contact)
-
-=== NON-PROFITS & CAUSES ===
-- If anyone asks about non-profits, charities, causes, sustainability, or what WatchDNA supports: direct them to [Our Vision](https://watchdna.com/pages/ourvision) and use any info from that page in WEBSITE CONTENT.
 
 CONTRIBUTORS DATA:
 {contributors}
@@ -1067,17 +982,7 @@ async def chat(req: ChatRequest):
 
     # --- NORMAL KB PATH ---
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
-
-    # Detect budget early so it can be passed to load_knowledge filter AND budget_hint
-    _ba, _bd = extract_budget(req.message)
-    if not _ba:
-        for _h in reversed(req.history[-10:]):
-            if _h.get("role") == "user":
-                _ba, _bd = extract_budget(_h.get("content", ""))
-                if _ba:
-                    break
-
-    knowledge = load_knowledge(req.message, currency=currency, budget_override=(_ba, _bd))
+    knowledge = load_knowledge(req.message, currency=currency)
     print(f"[KNOWLEDGE] loaded for currency={currency}")
 
     market_brands = get_brands_for_market(currency)
@@ -1106,35 +1011,6 @@ async def chat(req: ChatRequest):
     store_hint = ""
     if is_store_query:
         store_hint = "\n\nNOTE: Give user the store locator link directly: [Find a Store](https://watchdna.com/tools/storelocator) — tell them to search by brand or city on the map."
-
-    # Budget hint — explicitly tell GPT the price constraint so it can't ignore it
-    budget_hint = ""
-    if _ba and _bd:
-        sym = CURRENCY_SYMBOLS.get(currency, "$")
-        if _bd == "max":
-            budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches UNDER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced BELOW {sym}{_ba:,.0f} {currency}. Do NOT recommend anything priced above this — not even as a suggestion."
-        else:
-            budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches OVER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced ABOVE {sym}{_ba:,.0f} {currency}. Do NOT recommend anything priced below this."
-
-    # Latest blog hint — pulled live from RSS, always accurate
-    latest_blog_hint = ""
-    is_blog_q = any(w in req.message.lower() for w in ["latest blog", "recent blog", "newest blog", "latest post", "recent post", "whats the blog", "what's the blog"])
-    if not is_blog_q:
-        for _h in req.history[-4:]:
-            if _h.get("role") == "user" and any(w in _h.get("content","").lower() for w in ["latest blog", "recent blog", "latest post"]):
-                is_blog_q = True
-                break
-    if is_blog_q:
-        latest = get_latest_blog_from_rss()
-        if latest:
-            latest_blog_hint = (
-                f"\n\nLATEST BLOG POST (from live RSS — use this, it is the most recent):\n"
-                f"Title: {latest['title']}\n"
-                f"URL: {latest['url']}\n"
-                f"Published: {latest['published']}\n"
-                f"Format: [{latest['title']}]({latest['url']}) — Published: {latest['published']}"
-            )
-            print(f"[RSS] Latest blog: {latest['title']} ({latest['published']})")
 
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
@@ -1192,7 +1068,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + budget_hint + latest_blog_hint + expensive_hint + brand_product_hint + brands_hint,
+        knowledge=knowledge + store_hint + expensive_hint + brand_product_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
