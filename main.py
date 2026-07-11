@@ -148,23 +148,47 @@ def get_knowledge_base():
 
 
 def get_latest_from_rss() -> dict | None:
-    """Fetch the latest post directly from the RSS feed — always current."""
-    import xml.etree.ElementTree as ET
-    from email.utils import parsedate_to_datetime
+    """
+    Fetch the latest post directly from the RSS feed — always current.
+    Uses regex parsing because the feed contains raw HTML/CSS inside items
+    that breaks strict XML parsers (this is why the old version silently failed).
+    """
     try:
-        with urllib.request.urlopen("https://watchdna.com/pages/all-blogs-rss", timeout=10) as r:
-            root = ET.fromstring(r.read().decode())
-        for item in root.iter("item"):
-            link = item.findtext("link", "").strip().split("?")[0]
-            title = item.findtext("title", "").strip()
-            pub = item.findtext("pubDate", "").strip()
-            if link and title:
-                date = ""
-                try:
-                    date = parsedate_to_datetime(pub).strftime("%Y-%m-%d")
-                except Exception:
-                    date = pub[:10]
-                return {"url": link, "title": title, "published": date}
+        rq = urllib.request.Request(
+            "https://watchdna.com/pages/all-blogs-rss",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; WatchDNAChatbot/1.0)"},
+        )
+        with urllib.request.urlopen(rq, timeout=10) as r:
+            text = r.read().decode(errors="replace")
+
+        # Find the first <item> block and pull title + link with regex (XML-parser-proof)
+        item_match = re.search(r"<item>(.*?)</item>", text, re.DOTALL | re.IGNORECASE)
+        if not item_match:
+            print("[RSS] No <item> found in feed")
+            return None
+        block = item_match.group(1)
+
+        title_m = re.search(r"<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</title>", block, re.DOTALL | re.IGNORECASE)
+        link_m = re.search(r"<link>\s*(?:<!\[CDATA\[)?(https?://[^<\]\s]+)", block, re.DOTALL | re.IGNORECASE)
+
+        if not title_m or not link_m:
+            print("[RSS] Could not extract title/link from first item")
+            return None
+
+        title = re.sub(r"<[^>]+>", "", title_m.group(1)).strip()
+        link = link_m.group(1).strip().split("?")[0]
+
+        pub_m = re.search(r"<pubDate>\s*(.*?)\s*</pubDate>", block, re.DOTALL | re.IGNORECASE)
+        date = ""
+        if pub_m:
+            try:
+                from email.utils import parsedate_to_datetime
+                date = parsedate_to_datetime(pub_m.group(1).strip()).strftime("%Y-%m-%d")
+            except Exception:
+                date = pub_m.group(1).strip()[:10]
+
+        print(f"[RSS] Latest parsed: {title[:60]} -> {link}")
+        return {"url": link, "title": title, "published": date}
     except Exception as e:
         print(f"[RSS] Error: {e}")
     return None
