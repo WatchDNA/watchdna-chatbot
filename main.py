@@ -344,13 +344,16 @@ def extract_budget(query: str):
     return (None, None)
 
 
-def load_knowledge(query: str = "", currency: str = "CAD") -> str:
+def load_knowledge(query: str = "", currency: str = "CAD", budget_override: tuple = (None, None)) -> str:
     data = get_knowledge_base()
     if not data:
         return "Knowledge base not available."
 
     currency = currency.upper()
-    budget_amount, budget_dir = extract_budget(query)
+    if budget_override != (None, None):
+        budget_amount, budget_dir = budget_override
+    else:
+        budget_amount, budget_dir = extract_budget(query)
     keywords = [w for w in query.lower().split() if len(w) > 2]
     query_lower = query.lower()
 
@@ -1005,8 +1008,18 @@ async def chat(req: ChatRequest):
 
     # --- NORMAL KB PATH ---
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
-    knowledge = load_knowledge(req.message, currency=currency)
-    print(f"[KNOWLEDGE] loaded for currency={currency}")
+
+    # Detect budget from current message AND history — must happen before load_knowledge
+    _ba, _bd = extract_budget(req.message)
+    if not _ba:
+        for _h in reversed(req.history[-10:]):
+            if _h.get("role") == "user":
+                _ba, _bd = extract_budget(_h.get("content", ""))
+                if _ba:
+                    break
+
+    knowledge = load_knowledge(req.message, currency=currency, budget_override=(_ba, _bd))
+    print(f"[KNOWLEDGE] loaded for currency={currency} budget={_ba} dir={_bd}")
 
     market_brands = get_brands_for_market(currency)
     brands_hint = ""
@@ -1056,6 +1069,15 @@ async def chat(req: ChatRequest):
                 f"Respond with ONLY: [{latest['title']}]({latest['url']}) — no date, no description, just the linked title."
             )
             print(f"[RSS] Latest: {latest['title']} ({latest['published']})")
+
+    # Budget hint — explicitly tells GPT the price constraint so it can't recommend outside it
+    budget_hint = ""
+    if _ba and _bd:
+        sym = CURRENCY_SYMBOLS.get(currency, "$")
+        if _bd == "max":
+            budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches UNDER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced BELOW {sym}{_ba:,.0f} {currency}. Do NOT recommend anything above this — not even with a note."
+        else:
+            budget_hint = f"\n\nBUDGET CONSTRAINT: User wants watches OVER {sym}{_ba:,.0f} {currency}. ONLY recommend watches priced ABOVE {sym}{_ba:,.0f} {currency}. Do NOT recommend anything below this."
 
     expensive_hint = ""
     if any(w in req.message.lower() for w in ["most expensive", "priciest", "highest price", "most costly"]):
@@ -1113,7 +1135,7 @@ async def chat(req: ChatRequest):
         all_brands=ALL_BRANDS,
         store_links=store_links,
         brand_links=brand_links,
-        knowledge=knowledge + store_hint + latest_rss_hint + expensive_hint + brand_product_hint + brands_hint,
+        knowledge=knowledge + store_hint + budget_hint + latest_rss_hint + expensive_hint + brand_product_hint + brands_hint,
     )
 
     messages = [{"role": "system", "content": system}]
